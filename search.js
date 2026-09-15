@@ -38,7 +38,7 @@ let searchSeq = 0;
 // One-click diagnostics: every network surface records its outcome here
 // (surface, HTTP/error, ms, result size). Popup "Copy diagnostics" sends
 // INTA_GET_DIAG and pastes this — no DevTools needed to debug search.
-const INTA_VER = "1.1.8 (OLIN 1.1.j)";
+const INTA_VER = "1.1.9 (OLIN 1.1.k)";
 const diagFetches = [];
 function diagRec(surface, ok, info) {
   try {
@@ -866,7 +866,23 @@ async function fetchText(url, signal, label) {
   const t0 = Date.now();
   const name = label || ("page:" + String(url).split("/").filter(Boolean).slice(-2).join("/"));
   try {
-    const res = await fetch(url, { credentials: "same-origin", headers: { "x-requested-with": "XMLHttpRequest" }, signal: signal || ctrl.signal });
+    // Mimic a real tab navigation EXACTLY: full document headers, cookies,
+    // and NO x-requested-with. Instagram serves its reel-filled Popular
+    // page to navigations but a gutted variant to background API-style
+    // calls — that mismatch was why the same URL worked in a tab but not
+    // in the extension.
+    const res = await fetch(url, {
+      credentials: "include",
+      headers: {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+      },
+      signal: signal || ctrl.signal,
+    });
     if (!res.ok) throw new Error("HTTP " + res.status);
     const t = await res.text();
     diagRec(name, true, `html ${t.length}b ${Date.now() - t0}ms`);
@@ -898,7 +914,8 @@ function popularPageUrl(clean, noSpace) {
     return "/popular/" + encodeURIComponent(slug) + "/";
   } catch { return null; }
 }
-function popularSlugs(query) {  try {
+function popularSlugs(query) {
+  try {
     const norm = String(query || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
     if (!norm) return [];
     const first = norm.split(" ")[0];
@@ -921,10 +938,16 @@ async function fetchPopularAll(query, signal, cap = 18) {
         .catch(() => null)
     ));
     for (const pg of pages) {
-      if (!pg || !pg.html || pg.html.length < 5000) continue;
+      if (!pg) continue;
+      if (!pg.html || pg.html.length < 5000) {
+        diagRec("popular/parse", false, `${pg.slug || "?"} html=${(pg.html || "").length}b skipped`);
+        continue;
+      }
       if (signal && signal.aborted) break;
+      const before = out.length;
       parsePopularJson(pg.html, seen, out);
       parsePopularAnchors(pg.html, seen, out);
+      diagRec("popular/parse", out.length > before, `${pg.slug} +${out.length - before} reels (html=${pg.html.length}b)`);
       if (out.length >= cap) break;
     }
   } catch {}
