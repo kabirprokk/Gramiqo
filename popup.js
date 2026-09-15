@@ -59,6 +59,38 @@ document.addEventListener("DOMContentLoaded", async () => {
     } catch {}
   };
 
+  document.getElementById("copyDiag")?.addEventListener("click", async () => {
+    const status = document.getElementById("diagStatus");
+    const say = (t) => { if (status) status.textContent = t; };
+    say("Reading Instagram tab…");
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab || !(tab.url || "").includes("instagram.com")) {
+        say("Open instagram.com first, then click again.");
+        return;
+      }
+      let res = null;
+      try {
+        res = await chrome.tabs.sendMessage(tab.id, { type: "INTA_GET_DIAG" });
+      } catch (e) {
+        say("No answer — reload the extension + hard-refresh IG (Ctrl+Shift+R).");
+        return;
+      }
+      if (!res || !res.ok || !res.diag) {
+        say("Empty answer — hard-refresh the IG tab and retry.");
+        return;
+      }
+      const text = "INTA-DIAG " + JSON.stringify(res.diag);
+      try {
+        await navigator.clipboard.writeText(text);
+        say(`Copied! Paste it here (grid=${res.diag.counts?.grid ?? "?"}).`);
+      } catch {
+        say(text.slice(0, 400));
+      }
+    } catch (e) {
+      say("Failed: " + String((e && e.message) || e).slice(0, 100));
+    }
+  });
   // Nuclear reset: clears stuck sync/local state (e.g. Mobile feel stuck ON
   // causing a blank IG page even after reinstall — sync storage survives
   // reinstalls). Defaults are desktop-safe, then IG tabs reload.

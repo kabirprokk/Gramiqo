@@ -41,4 +41,11 @@ kbd { background: #eee; border: 1px solid #ccc; border-radius: 4px; padding: 1px
   font-weight: 600; cursor: pointer; font-size: 14px; margin-top: 8px;
 }
 #openSettings:hover { background: #f0f0f0; }
+#copyDiag, #resetAll {
+  width: 100%; padding: 10px; border: 1px solid #dbdbdb; border-radius: 8px;
+  background: #fff; color: #111;
+  font-weight: 600; cursor: pointer; font-size: 13px; margin-top: 8px;
+}
+#copyDiag:hover, #resetAll:hover { background: #f0f0f0; }
+.diag-status { font-size: 11px; color: #666; margin: 6px 2px 0; min-height: 14px; word-break: break-word; }
 .foot { text-align: center; font-size: 11px; color: #999; margin-top: 8px; }

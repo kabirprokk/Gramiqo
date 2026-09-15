@@ -35,6 +35,44 @@ let enhanceTimer = null;
 let aborter = null;
 let searchSeq = 0;
 
+// One-click diagnostics: every network surface records its outcome here
+// (surface, HTTP/error, ms, result size). Popup "Copy diagnostics" sends
+// INTA_GET_DIAG and pastes this — no DevTools needed to debug search.
+const INTA_VER = "1.1.7 (OLIN 1.1.i)";
+const diagFetches = [];
+function diagRec(surface, ok, info) {
+  try {
+    diagFetches.push({ t: new Date().toISOString().slice(11, 19), surface: String(surface || "?").slice(0, 80), ok: !!ok, info: String(info ?? "").slice(0, 160) });
+    while (diagFetches.length > 30) diagFetches.shift();
+  } catch {}
+}
+function buildDiag() {
+  let page = {};
+  try {
+    const main = document.querySelector("main");
+    page = {
+      url: location.href,
+      mainText: (main?.innerText || "").trim().length,
+      drawer: !!document.querySelector('div[role="dialog"], aside'),
+      input: !!findSearchInput(),
+      wrap: !!document.getElementById("inta-wrap"),
+      tabs: [...document.querySelectorAll("#inta-tabs button")].map((b) => b.dataset.tab + (b.classList.contains("active") ? "*" : "")).join(","),
+    };
+  } catch (e) { page = { err: String(e) }; }
+  const d = lastData || {};
+  return {
+    ver: INTA_VER, enabled, keywordFirst, activeTab, lastQuery,
+    counts: {
+      users: (d.users || []).length, hashtags: (d.hashtags || []).length,
+      places: (d.places || []).length, posts: (d.posts || []).length,
+      grid: (d.grid || []).length, clips: (d.clips || []).length,
+      suggests: (d.suggests || []).length, tracks: (d.tracks || []).length,
+      reelSource: d.reelSource || null, serpLive: !!d.serpLive, blocked: !!d._blocked,
+    },
+    page, fetches: [...diagFetches],
+  };
+}
+
 init().catch(() => {});
 
 async function init() {
@@ -61,6 +99,18 @@ async function init() {
     });
   } catch {}
   refreshPins().catch(() => {});
+  try {
+    window.IntaDiag = () => { try { return buildDiag(); } catch (e) { return { err: String(e) }; } };
+  } catch {}
+  try {
+    chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+      if (msg && msg.type === "INTA_GET_DIAG") {
+        try { sendResponse({ ok: true, diag: buildDiag() }); }
+        catch (e) { try { sendResponse({ ok: false, err: String(e) }); } catch {} }
+      }
+      return false;
+    });
+  } catch {}
   if (!enabled) return;
   bindGlobalSearchKeys();
   bindResultNav();
@@ -792,24 +842,38 @@ function getCsrf() {
 function headers() {
   return { "x-ig-app-id": APP_ID, "x-requested-with": "XMLHttpRequest", "x-csrftoken": getCsrf() };
 }
-async function fetchJson(url, signal) {
+async function fetchJson(url, signal, label) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  const t0 = Date.now();
+  const name = label || String(url).split("?")[0].split("/").slice(-2).join("/");
   try {
     const res = await fetch(url, { credentials: "include", headers: headers(), signal: signal || ctrl.signal });
     if (!res.ok) throw new Error("HTTP " + res.status);
-    return await res.json();
+    const j = await res.json();
+    diagRec(name, true, `ok ${Date.now() - t0}ms keys=${Object.keys(j || {}).length}`);
+    return j;
+  } catch (e) {
+    diagRec(name, false, `${String((e && e.message) || e).slice(0, 60)} ${Date.now() - t0}ms`);
+    throw e;
   } finally {
     clearTimeout(timer);
   }
 }
-async function fetchText(url, signal) {
+async function fetchText(url, signal, label) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  const t0 = Date.now();
+  const name = label || ("page:" + String(url).split("/").filter(Boolean).slice(-2).join("/"));
   try {
     const res = await fetch(url, { credentials: "same-origin", headers: { "x-requested-with": "XMLHttpRequest" }, signal: signal || ctrl.signal });
     if (!res.ok) throw new Error("HTTP " + res.status);
-    return await res.text();
+    const t = await res.text();
+    diagRec(name, true, `html ${t.length}b ${Date.now() - t0}ms`);
+    return t;
+  } catch (e) {
+    diagRec(name, false, `${String((e && e.message) || e).slice(0, 60)} ${Date.now() - t0}ms`);
+    throw e;
   } finally {
     clearTimeout(timer);
   }
@@ -842,7 +906,7 @@ async function fetchPopularAll(query, signal, cap = 18) {
     const slugs = popularSlugs(query);
     if (!slugs.length) return out;
     const pages = await Promise.all(slugs.map((slug) =>
-      fetchText("https://www.instagram.com/popular/" + encodeURIComponent(slug) + "/", signal)
+      fetchText("https://www.instagram.com/popular/" + encodeURIComponent(slug) + "/", signal, "popular/" + slug)
         .then((html) => ({ slug, html }))
         .catch(() => null)
     ));
@@ -933,7 +997,7 @@ async function fetchTopSearch(query, signal) {
   return fetchJson(
     "https://www.instagram.com/api/v1/web/search/topsearch/?context=blended&query=" +
       encodeURIComponent(query) + "&rank_token=" + rank + "&include_reel=true",
-    signal
+    signal, "web-topsearch"
   );
 }
 
@@ -958,7 +1022,7 @@ async function fetchSerp(path, params, signal) {
     if (v == null || v === "") continue;
     qs.append(k, String(v));
   }
-  return fetchJson("https://www.instagram.com/api/v1/" + path + "/?" + qs.toString(), signal);
+  return fetchJson("https://www.instagram.com/api/v1/" + path + "/?" + qs.toString(), signal, path);
 }
 async function tryPaths(paths, signal) {
   for (const [p, pr] of paths) {
@@ -1128,7 +1192,7 @@ async function fetchTagClips(tagName, signal, perTag = 3) {
   try {
     const j = await fetchJson(
       "https://www.instagram.com/api/v1/tags/web_info/?tag_name=" + encodeURIComponent(tagName),
-      signal
+      signal, "tag:" + tagName
     );
     // Shape varies by account/region: try known paths first, then deep-scan
     // for any {code, image_versions2} media objects as a last resort.
@@ -1309,8 +1373,11 @@ async function runSearch(q) {
     };
     cacheSet(q, lastData);
     saveRecent(q);
+    diagRec("runSearch:" + q.slice(0, 40), true,
+      `users=${users.length} tags=${hashtags.length} grid=${lastData.grid.length} clips=${clips.length} src=${reelSource || "-"} serp=${lastData.serpLive} blocked=${lastData._blocked}`);
   } catch (err) {
     if (err?.name === "AbortError") return;
+    diagRec("runSearch:" + String(q).slice(0, 40), false, String((err && err.message) || err).slice(0, 80));
     lastData = { users: [], hashtags: [], places: [], posts: [], clips: [], grid: [], reelSource: null, related: [], suggests: [], tracks: [], serpLive: false, _blocked: true };
   }
   if (mySeq === searchSeq) renderIntoNative();
