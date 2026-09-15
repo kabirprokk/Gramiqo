@@ -38,7 +38,7 @@ let searchSeq = 0;
 // One-click diagnostics: every network surface records its outcome here
 // (surface, HTTP/error, ms, result size). Popup "Copy diagnostics" sends
 // INTA_GET_DIAG and pastes this — no DevTools needed to debug search.
-const INTA_VER = "1.1.7 (OLIN 1.1.i)";
+const INTA_VER = "1.1.8 (OLIN 1.1.j)";
 const diagFetches = [];
 function diagRec(surface, ok, info) {
   try {
@@ -887,8 +887,18 @@ async function fetchText(url, signal, label) {
    3. Everything merges into one deduped pool: popular reels, SERP posts,
       tag clips — Keyword tab shows the big grid, Reels tab the reel
       slice, For-you the top picks. Hashtag grids are last-resort only. */
-function popularSlugs(query) {
+// Every keyword click lands here: instagram.com/popular/<words>/ — a real
+// Instagram results page (the same one Google sends users to), never a
+// dead-end route.
+function popularPageUrl(clean, noSpace) {
   try {
+    const slugs = popularSlugs(clean);
+    const slug = slugs[0] || String(noSpace || "").toLowerCase().replace(/[^a-z0-9-]/g, "");
+    if (!slug) return null;
+    return "/popular/" + encodeURIComponent(slug) + "/";
+  } catch { return null; }
+}
+function popularSlugs(query) {  try {
     const norm = String(query || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
     if (!norm) return [];
     const first = norm.split(" ")[0];
@@ -1442,7 +1452,7 @@ function renderIntoNative() {
   const clean = q.replace(/^[@#]/, "").trim();
   const noSpace = clean.replace(/\s+/g, "");
   const tagUrl = noSpace ? "/explore/tags/" + encodeURIComponent(noSpace) + "/" : null;
-  const keywordUrl = clean ? "/explore/search/?q=" + encodeURIComponent(clean) : null;
+  const keywordUrl = popularPageUrl(clean, noSpace);
 
   let html = "";
   if (teenFilterActive() && q)
@@ -1599,22 +1609,25 @@ function tagRows(lim, tagUrl, noSpace, withFallback = true) {
 
 function audioSection(clean, noSpace) {
   // Real IG audio results first (music/audio_global_search — same surface
-  // the app uses), reels + direct link as fallback. Tracks have no public
-  // playable URL on web, so rows link to the matching audio keyword search.
+  // the app uses), reels + popular page as fallback. Every row lands on a
+  // real page: tracks open their own Popular page (or the topic's page).
   const tracks = Array.isArray(lastData.tracks) ? lastData.tracks : [];
-  const audioUrl = "/explore/search/?q=" + encodeURIComponent((clean || "") + " audio");
+  const topicUrl = popularPageUrl(clean, noSpace);
+  const audioUrl = popularPageUrl((clean || "") + " audio", noSpace ? noSpace + "audio" : "") || topicUrl;
   let html = `<div class="inta-sec">Audio</div>`;
   if (tracks.length) {
-    html += tracks.map((t) =>
-      `<a class="inta-row" href="/explore/search/?q=${encodeURIComponent(((t.title || "") + " " + (t.artist || "")).trim() || clean)}">`
+    html += tracks.map((t) => {
+      const slug = popularSlugs((t.title || "") + " " + (t.artist || ""))[0];
+      const href = slug ? "/popular/" + encodeURIComponent(slug) + "/" : (topicUrl || "#");
+      return `<a class="inta-row" href="${href}">`
       + `<span class="inta-ic">${ic("music", 20)}</span>`
       + `<span class="inta-txt"><span class="inta-t1">${esc(t.title || "Audio")}</span>`
-      + `<span class="inta-t2">${esc([t.artist, t.duration].filter(Boolean).join(" · ") || "trending sound")}</span></span></a>`
-    ).join("");
+      + `<span class="inta-t2">${esc([t.artist, t.duration].filter(Boolean).join(" · ") || "trending sound")}</span></span></a>`;
+    }).join("");
   }
   return html
     + (lastData.clips?.length ? reelsGrid(true) : (tracks.length ? "" : `<div class="inta-empty">No audio previews yet — try a link below.</div>`))
-    + `<a class="inta-row" href="${audioUrl}"><span class="inta-ic">${ic("music", 20)}</span><span class="inta-txt"><span class="inta-t1">${esc(clean)} audio</span><span class="inta-t2">trending sounds for this search</span></span></a>`;
+    + (audioUrl ? `<a class="inta-row" href="${audioUrl}"><span class="inta-ic">${ic("music", 20)}</span><span class="inta-txt"><span class="inta-t1">${esc(clean)} audio</span><span class="inta-t2">reels carrying this sound</span></span></a>` : "");
 }
 
 function placeRows(lim) {
@@ -1638,7 +1651,7 @@ function placeRows(lim) {
    UI immediately collapsed "red shoes" -> "#redshoes" and pushed the user
    to /explore/tags/. Keyword mode keeps the raw words ("red shoes") as the
    primary result set:
-   - direct keyword rows link to /explore/search/?q=<words> (IG keyword page)
+    - direct keyword rows link to /popular/<words>/ (IG Popular results page)
    - live users/tags/places are re-ranked by keyword-token match, not by
      who has the closest hashtag name
    - the #tag grid stays available, but as a secondary row / Tags tab.
@@ -1826,7 +1839,7 @@ function keywordSection(clean, noSpace, tagUrl, keywordUrl) {
     ).join("") + `</div>`;
   }
   if (keywordUrl) {
-    html += `<a class="inta-row" href="${keywordUrl}"><span class="inta-ic">${ic("play", 20)}</span><span class="inta-txt"><span class="inta-t1">See all keyword results</span><span class="inta-t2">instagram keyword search for “${esc(clean)}”</span></span></a>`;
+    html += `<a class="inta-row" href="${keywordUrl}"><span class="inta-ic">${ic("play", 20)}</span><span class="inta-txt"><span class="inta-t1">See all keyword results</span><span class="inta-t2">open Instagram's Popular page for “${esc(clean)}”</span></span></a>`;
   }
   return html;
 }
