@@ -1,5 +1,5 @@
 /* ============================================================
-   Inta-Enhancer - icons.js (OLIN 1.1.a)
+   Inta-Enhancer - icons.js (OLIN 1.1.b)
    Professional inline-SVG icon set. Self-contained: zero network
    requests (external images would violate Instagram's CSP), inherits
    surrounding text color, stroke-based like Instagram's own glyphs.

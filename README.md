@@ -2,7 +2,7 @@
 
 Mobile Instagram features for PC web. A Manifest V3 Chrome extension (works in Chrome, Edge, Brave) that brings the phone experience to `instagram.com`: **Search with Meta AI**, downloads, **320kbps MP3 audio**, story tools, reels toolkit, HD pics, bio-links + Notes editors, settings hub, and a deep mobile-illusion stack.
 
-**Version:** 1.2.2 · **OLIN:** 1.2.c
+**Version:** 1.1.2 · **OLIN:** 1.1.b
 *(OLIN names climb `1.1.a → … → 1.1.k → 1.2.a …` — the display name for each production stage.)*
 
 🌐 **Website:** open [`website/index.html`](website/index.html) — features, install guide, FAQ, [bug report page](website/bug.html).
@@ -50,7 +50,7 @@ No backend, no analytics, no tracking. Your login stays in Instagram's own cooki
 ## Project layout
 
 ```
-manifest.json      MV3 manifest (1.2.2 / OLIN 1.2.c)
+manifest.json      MV3 manifest (1.1.2 / OLIN 1.1.b)
 icons.js           inline-SVG icon set (zero network requests, CSP-safe)
 vendor/lame.min.js MP3 encoder (vendored, runs fully offline)
 background.js      downloads queue + mobile-illusion network rules + spoof registration

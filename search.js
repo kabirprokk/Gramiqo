@@ -38,7 +38,7 @@ let searchSeq = 0;
 // One-click diagnostics: every network surface records its outcome here
 // (surface, HTTP/error, ms, result size). Popup "Copy diagnostics" sends
 // INTA_GET_DIAG and pastes this — no DevTools needed to debug search.
-const INTA_VER = "1.2.2 (OLIN 1.2.c)";
+const INTA_VER = "1.1.2 (OLIN 1.1.b)";
 const diagFetches = [];
 function diagRec(surface, ok, info) {
   try {
@@ -339,7 +339,9 @@ function cleanup() {
 
 function findSearchInput() {
   try {
-    const all = [...document.querySelectorAll('input[type="text"], input:not([type])')];
+    // Desktop + mobile-web markups: mobile uses input[type="search"] and
+    // looser containers, so accept both and score generously.
+    const all = [...document.querySelectorAll('input[type="text"], input[type="search"], input:not([type])')];
     const visible = all.filter((i) => {
       if (i.closest("#inta-wrap, #inta-top-search, #inta-edit-helper, #inta-search-overlay, #inta-palette, #inta-settings")) return false;
       if (i.hasAttribute("data-meta-input")) return false; // our own Ask box
@@ -347,14 +349,15 @@ function findSearchInput() {
       if (i.closest(".inta-meta")) return false;
       if (i.offsetParent === null) return false;
       const r = i.getBoundingClientRect();
-      return r.width > 120 && r.height > 10;
+      return r.width > 100 && r.height > 10;
     });
     const scored = visible
       .map((i) => {
-        const label = ((i.getAttribute("aria-label") || "") + " " + (i.placeholder || "")).toLowerCase();
-        const inDrawer = i.closest('div[role="dialog"], aside') ? 2 : 0;
+        const label = ((i.getAttribute("aria-label") || "") + " " + (i.placeholder || "") + " " + (i.getAttribute("name") || "")).toLowerCase();
+        const inDrawer = i.closest('div[role="dialog"], aside, form[role="search"], header') ? 2 : 0;
         const isSearch = label.includes("search") ? 3 : 0;
-        return { i, score: inDrawer + isSearch };
+        const isType = (i.getAttribute("type") || "").toLowerCase() === "search" ? 2 : 0;
+        return { i, score: inDrawer + isSearch + isType };
       })
       .filter((x) => x.score > 0)
       .sort((a, b) => b.score - a.score);
@@ -817,6 +820,10 @@ function bindGlobalSearchKeys() {
               inp.focus();
             } catch {}
           }, 300);
+        } else {
+          // No drawer input (e.g. mobile markup): open our own search panel.
+          e.preventDefault();
+          try { window.IntaOpenSearch?.(""); } catch {}
         }
       } else if (e.key === "Escape" && typing && t === findSearchInput()) {
         t.blur();

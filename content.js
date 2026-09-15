@@ -128,7 +128,7 @@ async function init() {
   scheduleEnhance(0);
   onRouteChange();
   watchBlankPage();
-  console.log("[Inta-Enhancer] OLIN 1.2.c loaded. Keys: D=download C=caption F=fullscreen P=PiP /=search Ctrl+K=commands");
+  console.log("[Inta-Enhancer] OLIN 1.1.b loaded. Keys: D=download C=caption F=fullscreen P=PiP /=search Ctrl+K=commands");
 }
 
 /* Blank-page watchdog: if Mobile feel's iPhone UA leaves instagram.com an

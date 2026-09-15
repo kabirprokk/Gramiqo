@@ -1,5 +1,5 @@
 /* ============================================================
-   Inta-Enhancer - spoof.js (OLIN 1.1.a)
+   Inta-Enhancer - spoof.js (OLIN 1.1.b)
    Runs in PAGE world (MAIN) at document_start — registered ONLY
    while Mobile feel is ON (background.js registers/unregisters it
    with the toggle; a reload applies the change, same as the UA rule).

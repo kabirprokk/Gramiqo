@@ -1,5 +1,5 @@
 /* ============================================================
-   Inta-Enhancer - power.js v1.0 (OLIN 1.1.a power pack)
+   Inta-Enhancer - power.js v1.0 (OLIN 1.1.b power pack)
    Advanced, guarded, zero-dependency. Runs after content.js.
    Features: story saver, reels toolkit, ghost mode, Cmd-K
    palette, stats history, bulk saver, hashtag tools.
@@ -57,7 +57,7 @@ async function init() {
 
   setInterval(tick, 1500);
   tick();
-  console.log("[Inta-Power] OLIN 1.1.a loaded");
+  console.log("[Inta-Power] OLIN 1.1.b loaded");
 }
 
 function tick() {
