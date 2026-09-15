@@ -873,7 +873,6 @@ function parsePopularJson(html, seen, out) {
         || win.match(/"username"\s*:\s*"([A-Za-z0-9._]{2,30})"/);
       const cap = win.match(/"text"\s*:\s*"([^"]{2,300})"/);
       const views = win.match(/"(?:video_view_count|view_count|play_count)"\s*:\s*(\d{1,12})/);
-      const likes = win.match(/"(?:like_count|edge_liked_by"\s*:\s*\{\s*"count"\s*:\s*(\d{1,12})|edge_liked_by)/);
       let likeCount = 0;
       const lm = win.match(/"like_count"\s*:\s*(\d{1,12})/) || win.match(/"edge_liked_by"\s*:\s*\{\s*"count"\s*:\s*(\d{1,12})/);
       if (lm) likeCount = Number(lm[1]) || 0;
@@ -914,10 +913,6 @@ function parsePopularAnchors(html, seen, out) {
       });
     }
   } catch {}
-}
-    }
-  } catch {}
-  return out;
 }
 async function fetchTopSearch(query, signal) {
   const rank = Math.random().toString(36).slice(2);
