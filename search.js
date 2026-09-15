@@ -1011,10 +1011,10 @@ function renderIntoNative() {
   } else if (activeTab === "foryou") {
     const places = placeRows(2);
     // Keyword-first: direct keyword links come before the #tag conversion.
-    html += aiCard(clean, noSpace, tagUrl, keywordUrl) + keywordDirectRows(clean, keywordUrl, tagUrl, noSpace) + reelsGrid(false, tagUrl, noSpace) + rowSection("Accounts", accountRows(3, noSpace)) + rowSection("Tags", tagRows(3, tagUrl, noSpace)) + (places ? rowSection("Places", places) : "");
+    html += aiCard(clean, noSpace, tagUrl, keywordUrl) + keywordDirectRows(clean, keywordUrl, tagUrl, noSpace) + reelsGrid(false, tagUrl, noSpace, keywordUrl, clean) + rowSection("Accounts", accountRows(3, noSpace)) + rowSection("Tags", tagRows(3, tagUrl, noSpace, false)) + (places ? rowSection("Places", places) : "");
   }
   else if (activeTab === "accounts") html += rowSection("Accounts", accountRows(8, noSpace));
-  else if (activeTab === "reels") html += reelsGrid(true, tagUrl, noSpace) + relatedPills();
+  else if (activeTab === "reels") html += reelsGrid(true, tagUrl, noSpace, keywordUrl, clean) + relatedPills();
   else if (activeTab === "audio") html += audioSection(clean, noSpace);
   else if (activeTab === "tags") html += rowSection("Tags", tagRows(8, tagUrl, noSpace));
 
@@ -1058,10 +1058,21 @@ function aiCard(clean, noSpace, tagUrl, keywordUrl) {
     sources.push(`<a class="inta-src" href="/explore/tags/${encodeURIComponent(t)}/">#${esc(t)}</a>`));
   if (topUser) sources.push(`<a class="inta-src" href="/${encodeURIComponent(topUser.username)}/">@${esc(topUser.username)}</a>`);
 
+  // Ask pills: keyword-only, idempotent (clicking twice never stacks
+  // "reels reels reels" or "best of best of …" like the old version did).
+  const deReeled = clean.replace(/\s+reels?\s*$/i, "").trim() || clean;
+  const deBest = clean.replace(/^best of\s+/i, "").trim() || clean;
+  const endsReels = /\s+reels?\s*$/i.test(clean);
+  const startsBest = /^best of\s+/i.test(clean);
+  const pill1q = endsReels ? deReeled + " videos" : clean + " reels";
+  const pill2q = startsBest ? deBest + " top posts" : "best of " + clean;
+  const toks = keywordTokens(clean);
+  const pill3q = toks.length > 1 ? toks[0] : clean + " posts";
+  const pill3label = toks.length > 1 ? `${toks[0]} (refine)` : `${clean} posts`;
   const asks = [
-    `<button type="button" class="inta-ask" data-ask="${escAttr(clean + " reels")}">${ic("spark", 12)}<span>${esc(clean)} reels</span></button>`,
-    `<button type="button" class="inta-ask" data-ask="${escAttr("best of " + clean)}">${ic("spark", 12)}<span>best of ${esc(clean)}</span></button>`,
-    `<button type="button" class="inta-ask" data-ask="${escAttr(noSpace || clean)}">${esc(noSpace ? "#" + noSpace + " latest" : "Trending now")}</button>`,
+    `<button type="button" class="inta-ask" data-ask="${escAttr(pill1q)}">${ic("spark", 12)}<span>${esc(endsReels ? deReeled + " videos" : clean + " reels")}</span></button>`,
+    `<button type="button" class="inta-ask" data-ask="${escAttr(pill2q)}">${ic("spark", 12)}<span>${esc(startsBest ? deBest + " top posts" : "best of " + clean)}</span></button>`,
+    `<button type="button" class="inta-ask" data-ask="${escAttr(pill3q)}">${esc(pill3label)}</button>`,
   ];
   return `<div class="inta-ai inta-meta">`
     + `<div class="inta-meta-head"><span class="inta-meta-logo" aria-hidden="true"><svg viewBox="0 0 36 36" width="18" height="18"><defs><linearGradient id="intamg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0082FB"/><stop offset=".5" stop-color="#786EFD"/><stop offset="1" stop-color="#E940DF"/></linearGradient></defs><path fill="url(#intamg)" d="M18 7c-2.6 0-4.2 1.4-5.6 2.8C10.9 11.2 9.4 12.6 7 12.6c-2.9 0-5 2.4-5 5.4s2.1 5.4 5 5.4c2.4 0 3.9-1.4 5.4-2.8C13.8 19.2 15.4 17.8 18 17.8s4.2 1.4 5.6 2.8c1.5 1.4 3 2.8 5.4 2.8 2.9 0 5-2.4 5-5.4s-2.1-5.4-5-5.4c-2.4 0-3.9 1.4-5.4 2.8C22.2 8.4 20.6 7 18 7zm-11 8.1c1.4 0 2.3.9 3.5 2.1 1.3 1.3 2.8 2.7 4.4 3.5-1 .5-2 1-3 1.6-1.1.6-2 1-2.9 1-1.6 0-2.7-1.3-2.7-3s1.1-3 2.7-3.1l-2-.1zm22 0c1.6 0 2.7 1.3 2.7 3s-1.1 3-2.7 3c-.9 0-1.8-.4-2.9-1-1-.6-2-1.1-3-1.6 1.6-.8 3.1-2.2 4.4-3.5 1.2-1.2 2.1-2.1 3.5-2.1l-2 .2z"/></svg></span>`
@@ -1074,18 +1085,20 @@ function aiCard(clean, noSpace, tagUrl, keywordUrl) {
     + `</div>`;
 }
 
-function reelsGrid(full, tagUrl, noSpace) {
-  // Always show the section: live thumbnails when the API allows, else
-  // one-tap link cards (tag reels grid + trending) that always work.
+function reelsGrid(full, tagUrl, noSpace, keywordUrl, clean) {
+  // Keyword-first: raw-words row leads, #tag grid is the alt fallback.
   let html = `<div class="inta-sec">Reels</div>`;
   if (lastData.clips?.length) {
     const clips = full ? lastData.clips : lastData.clips.slice(0, 6);
     html += `<div class="inta-reel-grid">` + clips.map((c) =>
-      `<a href="/reel/${encodeURIComponent(c.code)}/" class="inta-reel" title="#${esc(c.tag || "")}"><img src="${escAttr(c.thumb)}" loading="lazy" referrerpolicy="no-referrer" draggable="false" alt="" /><span>${ic("play", 10)} ${fmt(c.likes)}</span></a>`
+      `<a href="/reel/${encodeURIComponent(c.code)}/" class="inta-reel" title="${escAttr(clean || c.tag || "")}"><img src="${escAttr(c.thumb)}" loading="lazy" referrerpolicy="no-referrer" draggable="false" alt="" /><span>${ic("play", 10)} ${fmt(c.likes)}</span></a>`
     ).join("") + `</div>`;
   }
+  if (keywordUrl && clean) {
+    html += `<a class="inta-row inta-kw-main" href="${keywordUrl}"><span class="inta-ic">${ic("film", 20)}</span><span class="inta-txt"><span class="inta-t1">Reels for “${esc(clean)}”</span><span class="inta-t2">keyword match — same words</span></span></a>`;
+  }
   if (tagUrl && noSpace) {
-    html += `<a class="inta-row" href="${tagUrl}"><span class="inta-ic">${ic("film", 20)}</span><span class="inta-txt"><span class="inta-t1">Reels for #${esc(noSpace)}</span><span class="inta-t2">tap Reels filter — same as app</span></span></a>`;
+    html += `<a class="inta-row inta-alt" href="${tagUrl}"><span class="inta-ic">#</span><span class="inta-txt"><span class="inta-t1">#${esc(noSpace)}</span><span class="inta-t2">hashtag grid instead</span></span></a>`;
   }
   html += `<a class="inta-row" href="/reels/"><span class="inta-ic">${ic("play", 20)}</span><span class="inta-txt"><span class="inta-t1">Trending Reels</span><span class="inta-t2">instagram.com/reels</span></span></a>`;
   return html;
@@ -1121,7 +1134,7 @@ function accountRows(lim, noSpace) {
   return noSpace ? `<a class="inta-row" href="/${encodeURIComponent(noSpace)}/"><span class="inta-ic">${ic("user", 20)}</span><span class="inta-txt"><span class="inta-t1">@${esc(noSpace)}</span><span class="inta-t2">open profile directly</span></span></a>` : "";
 }
 
-function tagRows(lim, tagUrl, noSpace) {
+function tagRows(lim, tagUrl, noSpace, withFallback = true) {
   let tags = Array.isArray(lastData.hashtags) ? lastData.hashtags : [];
   if (keywordFirst && lastQuery) {
     tags = rankByKeyword(tags, (h) => (h?.hashtag?.name || ""), lastQuery);
@@ -1136,7 +1149,7 @@ function tagRows(lim, tagUrl, noSpace) {
       + `<span class="inta-txt"><span class="inta-t1">#${esc(t.name || "")} ${badge}</span>`
       + `<span class="inta-t2">${Number(t.media_count || 0).toLocaleString()} posts</span></span></a>`;
   }).join("") : "";
-  if (tagUrl) html += `<a class="inta-row" href="${tagUrl}"><span class="inta-ic">${ic("external", 18)}</span><span class="inta-txt"><span class="inta-t1">#${esc(noSpace)}</span><span class="inta-t2">photos + reels grid</span></span></a>`;
+  if (withFallback && tagUrl) html += `<a class="inta-row inta-alt" href="${tagUrl}"><span class="inta-ic">${ic("external", 18)}</span><span class="inta-txt"><span class="inta-t1">#${esc(noSpace)}</span><span class="inta-t2">hashtag grid instead</span></span></a>`;
   return html;
 }
 

@@ -2,7 +2,7 @@
 
 Mobile Instagram features for PC web. A Manifest V3 Chrome extension (works in Chrome, Edge, Brave) that brings the phone experience to `instagram.com`: **Search with Meta AI**, downloads, **320kbps MP3 audio**, story tools, reels toolkit, HD pics, bio-links + Notes editors, settings hub, and a deep mobile-illusion stack.
 
-**Version:** 1.0.0 · **OLIN:** 1.1.a
+**Version:** 1.1.0 · **OLIN:** 1.1.b
 *(OLIN names climb `1.1.a → … → 1.1.k → 1.2.a …` — the display name for each production stage.)*
 
 🌐 **Website:** open [`website/index.html`](website/index.html) — features, install guide, FAQ, [bug report page](website/bug.html).
@@ -21,7 +21,7 @@ Updating: pull/ZIP again → `chrome://extensions` → ⟳ Reload → `Ctrl+Shif
 
 | Area | What |
 |---|---|
-| Search with Meta AI | Default For-you answer card + follow-up box, pins, recents, places, Accounts/Reels/Audio/Tags tabs, keyboard nav (`/`, `↓`) |
+| Search with Meta AI | Keyword-first (default) + For-you answer card + follow-up box, pins, recents, places, Keyword/Accounts/Reels/Audio/Tags tabs, keyboard nav (`/`, `↓`) |
 | Downloads | Per-post/reel buttons, story saver, bulk grid saver (up to 12), HD avatars |
 | MP3 audio | Music-note button under every video → 320kbps MP3, captured on-device, nothing leaves the browser |
 | Reels toolkit | Speed 1×–2×, loop, mute, auto-next; auto-unmute; click-to-open reel view; explore reels open full-screen |
@@ -50,7 +50,7 @@ No backend, no analytics, no tracking. Your login stays in Instagram's own cooki
 ## Project layout
 
 ```
-manifest.json      MV3 manifest (1.0.0 / OLIN 1.1.a)
+manifest.json      MV3 manifest (1.1.0 / OLIN 1.1.b)
 icons.js           inline-SVG icon set (zero network requests, CSP-safe)
 vendor/lame.min.js MP3 encoder (vendored, runs fully offline)
 background.js      downloads queue + mobile-illusion network rules + spoof registration
