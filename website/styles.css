@@ -76,6 +76,7 @@ section{padding:40px 0}
 .form-msg.err{border:1px solid rgba(224,36,94,.6);background:rgba(224,36,94,.1);color:#ff8fb0}
 .form-msg.ok{border:1px solid rgba(0,149,246,.6);background:rgba(0,149,246,.1);color:#7cc7ff}
 .foot-in a{color:inherit}
+.seo-copy p{max-width:780px;color:var(--mut);font-size:15px}
 h2{font-size:30px;margin:0 0 6px}
 .sec-sub{color:var(--mut);margin:0 0 22px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
