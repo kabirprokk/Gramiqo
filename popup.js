@@ -59,6 +59,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     } catch {}
   };
 
+  // Nuclear reset: clears stuck sync/local state (e.g. Mobile feel stuck ON
+  // causing a blank IG page even after reinstall — sync storage survives
+  // reinstalls). Defaults are desktop-safe, then IG tabs reload.
+  document.getElementById("resetAll")?.addEventListener("click", async () => {
+    if (!confirm("Reset all Inta-Enhancer settings to defaults?")) return;
+    try { await chrome.storage.sync.clear(); } catch {}
+    try { await chrome.storage.local.clear(); } catch {}
+    try {
+      const tabs = await chrome.tabs.query({ url: "*://*.instagram.com/*" });
+      for (const t of tabs) if (t.id != null) try { chrome.tabs.reload(t.id); } catch {}
+    } catch {}
+    window.close();
+  });
+
   // Mobile-Mode needs a hard reload to take effect (UA is read on page load)
   document.getElementById("mobileMode")?.addEventListener("change", async () => {
     try {
