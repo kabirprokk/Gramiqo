@@ -113,7 +113,7 @@ async function init() {
     // Hammering enhanceAll on every mutation is what made clicks feel dead.
     let relevant = false;
     for (const m of mutations) {
-      if (m.target?.closest?.("#inta-wrap, #inta-top-search, #inta-edit-helper, #inta-profile-bar, #inta-toast, #inta-lens, #inta-modal, #inta-links-modal, #inta-palette, #inta-bulk, #inta-settings, #inta-search-overlay, .inta-reel-bar, .inta-story-dl")) continue;
+      if (m.target?.closest?.("#inta-wrap, #inta-top-search, #inta-edit-helper, #inta-profile-bar, #inta-toast, #inta-lens, #inta-modal, #inta-links-modal, #inta-palette, #inta-bulk, #inta-settings, #inta-search-overlay, #inta-reel-menu, .inta-reel-bar, .inta-story-dl")) continue;
       const nodes = [...(m.addedNodes || []), ...(m.removedNodes || [])];
       if (!nodes.length) continue;
       if (nodes.some((n) => n.nodeType === 1 && (n.matches?.("article, video, header, main, nav") || n.querySelector?.("article, video, header, main")))) {
@@ -1529,67 +1529,100 @@ function enhanceTopSearch() {
 /* ---------------- reels / video pages ---------------- */
 
 function enhanceReelsPage() {
-  if (!settings.downloadBtn) return;
-  // Reels-viewer videos live outside <article>s — same ⋯ menu, anchored to
-  // the video holder. Articles keep their own menu (never double up).
-  document.querySelectorAll("main video").forEach((video) => {
-    const holder =
-      video.closest("div:has(> video)") || video.parentElement || video;
-    if (!holder) return;
-    try {
-      if (getComputedStyle(holder).position === "static")
-        holder.style.position = "relative";
-    } catch {}
-    // Upgrade path: remove legacy single badges.
-    try {
-      holder.querySelectorAll?.(":scope > .inta-reel-dl, :scope > .inta-reel-mp3").forEach((b) => b.remove());
-    } catch {}
-    if (holder.querySelector?.(":scope > .inta-menu-wrap")) return;
-    try {
-      if (holder.closest("article")?.querySelector(":scope > .inta-menu-wrap")) return;
-    } catch {}
-    // Left-docked: IG's like/comment rail lives on the media's right edge
-    // (reels viewer) — our menu sits top-left where nothing overlaps.
-    try { holder.classList.add("inta-lefty"); } catch {}
-    const wrap = document.createElement("div");
-    wrap.className = "inta-menu-wrap";
-    const btn = document.createElement("button");
-    btn.className = "inta-menu";
-    btn.type = "button";
-    btn.textContent = "•••";
-    btn.title = "Reel actions (Inta-Enhancer)";
-    btn.setAttribute("aria-label", "Reel actions");
-    swallowToggle(btn);
-    const pop = document.createElement("div");
-    pop.className = "inta-menu-pop";
-    pop.setAttribute("role", "menu");
-    try { pop.style.display = "none"; } catch {} // hidden even if CSS fails
-    btn.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const was = pop.classList.contains("open");
-      closeAllMenus(null);
-      try { document.querySelectorAll(".inta-menu-pop").forEach((p) => { p.style.display = "none"; }); } catch {}
-      if (!was) {
-        pop.classList.add("open");
-        try { pop.style.display = "block"; } catch {}
-      }
+  // ZERO footprint inside reel frames: no children, no positioning, no
+  // classes on holders (touching them broke layout/clicks). One floating
+  // ⋯ menu lives OUTSIDE the frame (viewport bottom-left), acting on the
+  // reel currently on screen. Articles keep their own inline menus.
+  try {
+    document.querySelectorAll(".inta-menu-wrap").forEach((w) => {
+      try {
+        const holder = w.parentElement;
+        const inArticle = holder && holder.closest && holder.closest("article");
+        if (!inArticle) w.remove(); // reels-holder menu from older builds
+      } catch {}
     });
-    pop.appendChild(menuRow("download", "Download", () => {
-      const url = video.currentSrc || video.src || video.querySelector("source")?.src || "";
-      if (!url) return toast("Video still loading — wait a second");
-      downloadUrl(url, `insta-reel-${Date.now()}.mp4`);
-    }));
-    pop.appendChild(menuRow("music", "Audio MP3", () => {
-      downloadMp3FromElement(video);
-    }));
-    pop.appendChild(menuRow("link", "Copy link", () => {
-      copyText(location.href, "Reel link copied!");
-    }));
-    wrap.appendChild(btn);
-    wrap.appendChild(pop);
-    try { holder.appendChild(wrap); } catch {}
-  });
+    document.querySelectorAll(".inta-reel-dl, .inta-reel-mp3").forEach((b) => {
+      try { b.remove(); } catch {}
+    });
+    document.querySelectorAll(".inta-lefty").forEach((el) => {
+      try { el.classList.remove("inta-lefty"); } catch {}
+    });
+  } catch {}
+  updateFloatingReelMenu();
+}
+
+function isReelRoute() {
+  try {
+    const p = pathName();
+    return p.startsWith("/reel") || p.startsWith("/reels");
+  } catch { return false; }
+}
+
+function currentReelVideo() {
+  try {
+    const el = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
+    const v = el?.closest?.("video") || el?.querySelector?.("video") || findCenterVideo();
+    return v || null;
+  } catch { return null; }
+}
+
+function updateFloatingReelMenu() {
+  try {
+    let dock = document.getElementById("inta-reel-menu");
+    if (!isReelRoute() || !settings.downloadBtn) {
+      if (dock) dock.style.display = "none";
+      return;
+    }
+    bindMenuDismiss();
+    if (!dock || !dock.isConnected) {
+      const old = document.getElementById("inta-reel-menu");
+      if (old) { try { old.remove(); } catch {} }
+      dock = document.createElement("div");
+      dock.id = "inta-reel-menu";
+      try { dock.style.display = "none"; } catch {}
+      const btn = document.createElement("button");
+      btn.className = "inta-menu";
+      btn.type = "button";
+      btn.textContent = "•••";
+      btn.title = "Reel actions (Inta-Enhancer)";
+      btn.setAttribute("aria-label", "Reel actions");
+      swallowToggle(btn);
+      const pop = document.createElement("div");
+      pop.className = "inta-menu-pop";
+      try { pop.classList.add("inta-reel-pop"); } catch {}
+      pop.setAttribute("role", "menu");
+      try { pop.style.display = "none"; } catch {}
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const was = pop.classList.contains("open");
+        closeAllMenus(null);
+        try { document.querySelectorAll(".inta-menu-pop").forEach((p) => { p.style.display = "none"; }); } catch {}
+        if (!was) {
+          pop.classList.add("open");
+          try { pop.style.display = "block"; } catch {}
+        }
+      });
+      pop.appendChild(menuRow("download", "Download", () => {
+        const v = currentReelVideo();
+        const url = v ? (v.currentSrc || v.src || v.querySelector("source")?.src || "") : "";
+        if (!url) return toast("Video still loading — wait a second");
+        downloadUrl(url, `insta-reel-${Date.now()}.mp4`);
+      }));
+      pop.appendChild(menuRow("music", "Audio MP3", () => {
+        const v = currentReelVideo();
+        if (!v) return toast("Video still loading — wait a second");
+        downloadMp3FromElement(v);
+      }));
+      pop.appendChild(menuRow("link", "Copy link", () => {
+        copyText(location.href, "Reel link copied!");
+      }));
+      dock.appendChild(btn);
+      dock.appendChild(pop);
+      document.documentElement.appendChild(dock);
+    }
+    dock.style.display = "block";
+  } catch {}
 }
 
 /* ---------------- fullscreen + PiP ---------------- */
