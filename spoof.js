@@ -5,7 +5,11 @@
    with the toggle; a reload applies the change, same as the UA rule).
    Makes Instagram's OWN JavaScript see an iPhone:
      navigator.userAgent / appVersion / platform / vendor /
-     maxTouchPoints / userAgentData (+ high-entropy values).
+     userAgentData (+ high-entropy values).
+   Deliberately does NOT fake hardware or data traffic: maxTouchPoints /
+   ontouchstart stay real (faking them emptied the feed), window.chrome is
+   kept (deleting it blanked pages), and API requests (XHR) keep real
+   client hints — only the top-level page load carries the iPhone look.
    Network level (UA header + Sec-CH-* client hints) is spoofed by
    the declarativeNetRequest rules in background.js.
    Everything is guarded: if IG freezes an object, that one getter
@@ -33,9 +37,12 @@ try {
 try {
   Object.defineProperty(Navigator.prototype, "vendor", val("Apple Computer"));
 } catch {}
-try {
-  Object.defineProperty(Navigator.prototype, "maxTouchPoints", val(5));
-} catch {}
+
+// NOTE (empty-feed fix): do NOT spoof maxTouchPoints / ontouchstart.
+// Claiming touch hardware makes Instagram's page JS take mobile/touch code
+// paths on a desktop that may have none — feed components then mount wrong
+// or not at all (empty black shell). UA/platform strings are enough for
+// the mobile feel; hardware signals stay truthful.
 
 try {
   const brands = [
@@ -62,16 +69,9 @@ try {
   Object.defineProperty(Navigator.prototype, "userAgentData", val(uaData));
 } catch {}
 
-// "ontouchstart" in window stays true (touch-capable claim matches
-// maxTouchPoints). Setter is a noop so feature-detects keep working.
-try {
-  Object.defineProperty(window, "ontouchstart", {
-    configurable: true,
-    enumerable: true,
-    get: () => null,
-    set: () => {},
-  });
-} catch {}
+// NOTE (empty-feed fix, part 2): do NOT touch window.ontouchstart either.
+// Same reason as maxTouchPoints above — page-JS feature detects must see
+// the real desktop. Left completely alone.
 
 // NOTE (blank-page fix): do NOT delete window.chrome / window.browser.
 // Instagram's desktop bundle (served to real desktop Chrome) can depend on

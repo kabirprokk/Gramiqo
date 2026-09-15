@@ -119,6 +119,12 @@ async function applyMobileMode() {
           ],
         });
         try {
+          // DATA-SAFETY FIX: spoof headers on main_frame ONLY. Covering
+          // sub_frame/xmlhttprequest made every Instagram data call claim
+          // iOS-Safari while running desktop Chrome — the backend answered
+          // with wrong/empty bundles and the feed rendered as an empty
+          // black shell (sidebar + footer only). Page identity can pretend;
+          // data traffic must stay truthful.
           await chrome.declarativeNetRequest.updateDynamicRules({
             removeRuleIds: [HINT_ID],
             addRules: [
@@ -139,7 +145,7 @@ async function applyMobileMode() {
                 },
                 condition: {
                   urlFilter: "|https://*.instagram.com/*",
-                  resourceTypes: ["main_frame", "sub_frame", "xmlhttprequest"],
+                  resourceTypes: ["main_frame"],
                 },
               },
             ],
