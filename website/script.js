@@ -27,6 +27,26 @@
     });
   });
 
+  // mobile menu
+  const menuBtn = document.getElementById("menuBtn");
+  const panel = document.getElementById("mobilePanel");
+  menuBtn?.addEventListener("click", () => {
+    const open = panel?.hidden;
+    if (panel) panel.hidden = !open;
+    menuBtn.setAttribute("aria-expanded", String(!!open));
+    menuBtn.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+  });
+  panel?.querySelectorAll("a").forEach((a) => {
+    a.addEventListener("click", () => {
+      panel.hidden = true;
+      menuBtn?.setAttribute("aria-expanded", "false");
+    });
+  });
+
+  // copyright year (checklist: never ship a stale year)
+  const yr = document.getElementById("yr");
+  if (yr) yr.textContent = String(new Date().getFullYear());
+
   // nav shadow on scroll
   const nav = document.getElementById("topnav");
   const onScroll = () => nav?.classList.toggle("scrolled", window.scrollY > 12);
@@ -70,20 +90,29 @@
   }, { threshold: 0.5 });
   document.querySelectorAll(".count").forEach((el) => cio.observe(el));
 
-  // feature marquee (built from card titles — always in sync)
+  // feature marquee (built from card titles when present — homepage fallback otherwise)
   const track = document.getElementById("marqueeTrack");
   if (track) {
-    const names = [...document.querySelectorAll("#featureGrid .card b")]
+    let names = [...document.querySelectorAll("#featureGrid .card b")]
       .map((b) => b.textContent.trim()).filter(Boolean);
+    if (!names.length) {
+      names = ["Meta AI search", "Reels + MP3 downloads", "Story saver", "HD profile pics", "Notes editor", "Reels toolkit", "Bulk saver", "Command palette", "Bio-links editor", "Growth tracker"];
+    }
     const html = names.map((n) => `<span>${n.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</span>`).join("");
     track.innerHTML = html + html; // loop seam
     if (!reduced) {
       let x = 0;
+      let running = true;
+      new IntersectionObserver((es) => {
+        running = es[0]?.isIntersecting !== false;
+      }).observe(track);
       const half = () => track.scrollWidth / 2 || 1;
       (function slide() {
-        x -= 0.6;
-        if (-x >= half()) x = 0;
-        track.style.transform = `translateX(${x}px)`;
+        if (running && !document.hidden) {
+          x -= 0.6;
+          if (-x >= half()) x = 0;
+          track.style.transform = `translateX(${x}px)`;
+        }
         requestAnimationFrame(slide);
       })();
     }

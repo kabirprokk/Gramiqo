@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Inta-Enhancer — Mobile Instagram Features for PC Web (Search with Meta AI, Reels Downloader, MP3)</title>
-<meta name="description" content="Inta-Enhancer is a free Chrome extension that brings mobile Instagram to your PC: Search with Meta AI, download reels & photos, extract 320kbps MP3 audio, story saver, HD profile pics, bio-links editor, Notes editor, reels toolkit and more." />
+<title>Inta-Enhancer — Mobile Instagram Features for PC Web</title>
+<meta name="description" content="Inta-Enhancer is a free Chrome extension that brings mobile Instagram to your PC: Search with Meta AI, download reels & photos, extract 320kbps MP3 audio, story saver, HD profile pics, bio-links editor, Notes editor and more." />
 <meta name="keywords" content="instagram chrome extension, instagram downloader, instagram reels download, instagram to mp3, instagram story saver, instagram search, meta ai search, instagram HD profile pic, instagram bio links desktop, instagram notes pc, download instagram video, instagram pc features, inta-enhancer" />
 <meta name="robots" content="index, follow" />
 <meta name="theme-color" content="#0b0b10" />
@@ -28,40 +28,31 @@
   <defs>
     <symbol id="w-spark" viewBox="0 0 24 24"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z" fill="currentColor" stroke="none"/></symbol>
     <symbol id="w-download" viewBox="0 0 24 24"><path d="M12 3v12m0 0L7.5 10.5M12 15l4.5-4.5M4 21h16"/></symbol>
-    <symbol id="w-phone" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></symbol>
-    <symbol id="w-camera" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></symbol>
     <symbol id="w-film" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 4v16M17 4v16M2 9h5M2 15h5M17 9h5M17 15h5"/></symbol>
-    <symbol id="w-layers" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></symbol>
-    <symbol id="w-command" viewBox="0 0 24 24"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z"/></symbol>
-    <symbol id="w-user" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
-    <symbol id="w-trend" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></symbol>
-    <symbol id="w-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></symbol>
-    <symbol id="w-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></symbol>
-    <symbol id="w-hash" viewBox="0 0 24 24"><path d="M4 9h16M4 15h16M10 3L8 21M16 3l-2 18"/></symbol>
-    <symbol id="w-edit" viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></symbol>
     <symbol id="w-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
-    <symbol id="w-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
-    <symbol id="w-expand" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></symbol>
-    <symbol id="w-eyeoff" viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></symbol>
-    <symbol id="w-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
-    <symbol id="w-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
-    <symbol id="w-external" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14L21 3"/></symbol>
-    <symbol id="w-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3" fill="currentColor" stroke="none"/></symbol>
     <symbol id="w-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></symbol>
-    <symbol id="w-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
   </defs>
 </svg>
 <header class="nav" id="topnav">
   <div class="wrap nav-in">
-    <div class="brand"><span class="logo"><svg><use href="#w-spark"/></svg></span><span>Inta-Enhancer <em>OLIN 1.1.a</em></span></div>
-    <nav aria-label="Main">
-      <a href="#features">Features</a>
-      <a href="#meta">Meta AI</a>
-      <a href="#install">Install</a>
-      <a href="#faq">FAQ</a>
+    <div class="brand"><a class="brand-link" href="index.html"><span class="logo"><svg><use href="#w-spark"/></svg></span><span>Inta-Enhancer <em>OLIN 1.1.a</em></span></a></div>
+    <nav aria-label="Main" id="mainnav">
+      <a href="index.html" aria-current="page">Home</a>
+      <a href="features.html">Features</a>
+      <a href="install.html">Install</a>
+      <a href="faq.html">FAQ</a>
       <a href="bug.html">Report bug</a>
       <a class="btn small" href="https://github.com/kabirprokk/insta-enhancer" target="_blank" rel="noopener">GitHub</a>
     </nav>
+    <button id="menuBtn" aria-label="Open menu" aria-expanded="false" aria-controls="mobilePanel"><span></span><span></span><span></span></button>
+  </div>
+  <div class="mobile-panel" id="mobilePanel" hidden>
+    <a href="index.html">Home</a>
+    <a href="features.html">Features</a>
+    <a href="install.html">Install</a>
+    <a href="faq.html">FAQ</a>
+    <a href="bug.html">Report bug</a>
+    <a href="https://github.com/kabirprokk/insta-enhancer" target="_blank" rel="noopener">GitHub</a>
   </div>
 </header>
 
@@ -71,13 +62,13 @@
     <div class="hero-copy">
       <div class="pill"><svg class="pic"><use href="#w-spark"/></svg> v1.0 · OLIN 1.1.a · Chrome / Edge / Brave</div>
       <h1>Your phone's Instagram,<br />living in your browser.</h1>
-      <p class="sub">You know that feeling when a feature exists on your phone but vanishes on PC? Inta-Enhancer ends it. Search answers itself with <b>Meta AI</b>, reels melt into one-tap downloads and MP3s, stories save themselves — <b>18 power features</b>, all native, all free.</p>
+      <p class="sub">Ever notice how features exist on your phone but vanish on PC? Inta-Enhancer ends that. Search answers itself with <b>Meta AI</b>, reels become one-tap downloads and MP3s, stories save in a tap — <b>18 power features</b>, all native to Instagram, all free.</p>
       <div class="cta">
         <a class="btn" href="https://github.com/kabirprokk/insta-enhancer/archive/refs/heads/main.zip"><svg class="pic"><use href="#w-download"/></svg> Download free</a>
-        <a class="btn ghost" href="#demo">Watch it think</a>
+        <a class="btn ghost" href="features.html">Explore features</a>
       </div>
       <div class="meta">Free forever · No account needed · No backend — your login never leaves Instagram</div>
-      <div class="hero-proof"><span><b>18</b> features</span><span><b>0</b> servers</span><span><b>1</b> click install</span></div>
+      <div class="hero-proof"><span><b>18</b> features</span><span><b>0</b> servers</span><span><b>1</b> minute setup</span></div>
     </div>
     <div class="mock" id="mockTilt" aria-label="Live preview of Meta AI search inside Instagram">
       <div class="mock-bar"><span></span><span></span><span></span><em>instagram.com</em></div>
@@ -103,42 +94,16 @@
   </div>
 </section>
 
-<section id="features" class="wrap">
-  <h2 class="reveal">Everything your phone can do, now on desktop</h2>
-  <p class="sec-sub reveal">Tap any card to see it in action. Toggle everything from the popup.</p>
-  <div class="grid" id="featureGrid">
-    <div class="card hot" data-demo="Type anything in Instagram search — a Meta AI card answers from live results, with follow-ups, sources and top reels."><b><svg class="fic"><use href="#w-spark"/></svg> Search with Meta AI</b><p>For-you answer card + follow-up box, pinned searches, places, live accounts/tags/reels. Default, like your phone.</p></div>
-    <div class="card" data-demo="Instagram starts believing this PC is an iPhone — mobile layouts, mobile doors, desktop comfort."><b><svg class="fic"><use href="#w-phone"/></svg> Mobile feel</b><p>Instagram thinks the PC is an iPhone + app-like touches. Turn off anytime for desktop.</p></div>
-    <div class="card" data-demo="Press N anywhere — Instagram's own composer opens with posts and reels upload."><b><svg class="fic"><use href="#w-plus"/></svg> Quick create</b><p>Post photos + reels from PC via IG's own composer. Top-bar button, N key, Ctrl+K.</p></div>
-    <div class="card" data-demo="Open any story — a Save badge sits in the corner. One tap, photo or video."><b><svg class="fic"><use href="#w-camera"/></svg> Story saver</b><p>One-tap save button inside the stories viewer. Photos + videos.</p></div>
-    <div class="card" data-demo="Every reel grows a tiny bar: speed, loop, mute, auto-next, copy link."><b><svg class="fic"><use href="#w-film"/></svg> Reels toolkit</b><p>Speed 1x–2x, loop, mute, auto-next, copy link — tiny bar under every reel.</p></div>
-    <div class="card" data-demo="A floating button counts the visible grid — tap it and the whole visible set queues up."><b><svg class="fic"><use href="#w-layers"/></svg> Bulk saver</b><p>"Save visible (12)" floats on profiles/tags/explore. Queued downloads, no spam.</p></div>
-    <div class="card" data-demo="Ctrl+K anywhere — fuzzy-find every action without touching the mouse."><b><svg class="fic"><use href="#w-command"/></svg> Command palette</b><p><kbd>Ctrl+K</kbd> — download, search, create, reels, dark mode, copy link…</p></div>
-    <div class="card" data-demo="The stories tray glides to the center of wide screens — and stays scrollable."><b><svg class="fic"><use href="#w-target"/></svg> Center stage</b><p>Home stories tray centered on wide screens, still scrollable when overflowing.</p></div>
-    <div class="card" data-demo="Tap the HD badge on any avatar — full-resolution portrait with download."><b><svg class="fic"><use href="#w-user"/></svg> HD profile pics</b><p>HD badge on avatars + modal with download + full-size.</p></div>
-    <div class="card" data-demo="Visit any profile twice — a growth chip appears showing follower movement."><b><svg class="fic"><use href="#w-trend"/></svg> Growth tracker</b><p>Snapshots followers per visit, shows a +/- chip on profiles.</p></div>
-    <div class="card" data-demo="Desktop says 'mobile only' on bio links — our editor adds, edits and removes all 5 anyway."><b><svg class="fic"><use href="#w-link"/></svg> Bio-links editor</b><p>Desktop editor for the "mobile-only" links row. Add/edit/remove up to 5.</p></div>
-    <div class="card" data-demo="Hit the music-note button under any video — a 320kbps MP3 lands in seconds."><b><svg class="fic"><use href="#w-download"/></svg> Post buttons + MP3</b><p>Video download with 320kbps MP3 audio right below it. Highest-quality image, video + audio.</p></div>
-    <div class="card" data-demo="One tap copies every hashtag on a post, deduped and ready to paste."><b><svg class="fic"><use href="#w-hash"/></svg> Hashtag tools</b><p>Copy all #tags from any post in one tap, deduped.</p></div>
-    <div class="card" data-demo="The settings hub reads and writes your real DM note — 60 chars, audience picker."><b><svg class="fic"><use href="#w-edit"/></svg> Notes editor</b><p>Read, post and delete your Instagram note from PC. Plus bio counters &amp; profile bar.</p></div>
-    <div class="card" data-demo="Hover any photo — a magnifier lens follows your cursor."><b><svg class="fic"><use href="#w-search"/></svg> Hover zoom</b><p>Magnifier lens follows your cursor over photos.</p></div>
-    <div class="card" data-demo="Force true black for late nights, or stretch the feed across ultrawides."><b><svg class="fic"><use href="#w-moon"/></svg> Dark + Wide</b><p>Force dark, expand feed for big screens.</p></div>
-    <div class="card" data-demo="Ghost mode hides the stories tray and calms autoplay when you need focus."><b><svg class="fic"><use href="#w-eyeoff"/></svg> Ghost calm mode</b><p>Hides stories tray + calms autoplay for focus.</p></div>
-    <div class="card" data-demo="F throws anything fullscreen, P pops video into picture-in-picture."><b><svg class="fic"><use href="#w-expand"/></svg> F / P media keys</b><p>Fullscreen + picture-in-picture for any visible photo/reel.</p></div>
-  </div>
-  <div class="demo-bar reveal" id="demoBar" aria-live="polite"><span class="demo-dot"></span><span id="demoText">Tap any card above — I'll narrate what it does.</span></div>
-</section>
-
-<section id="demo" class="band">
+<section class="band" id="demo">
   <div class="wrap band-in">
     <div class="reveal">
       <h2>Search that answers before you finish asking</h2>
-      <p>On your phone, search opens Meta AI first. Inta-Enhancer does the same on PC: the <b>For you</b> tab is a Meta AI answer built from <b>live</b> Instagram results (never fake), with a follow-up box, Ask pills, sources, and a Suggested Reels grid ranked by likes. Try it above — the preview types for you.</p>
+      <p>On your phone, search opens Meta AI first. Inta-Enhancer brings the same experience to PC: the <b>For you</b> tab is a Meta AI answer built from <b>live</b> Instagram results (never made up), with a follow-up box, Ask pills, sources, and a Suggested Reels grid ranked by likes. The preview above types for you.</p>
       <ul class="ticks">
         <li>Ask box + send button, Enter to search</li>
         <li>Accounts / Reels / Audio / Tags tabs with live counts</li>
         <li>Pinned searches, recents, places, keyboard navigation</li>
-        <li>Works in IG's own drawer + full search page + fallback panel</li>
+        <li>Works in Instagram's own drawer, the full search page, and a fallback panel</li>
       </ul>
     </div>
     <div class="keys reveal">
@@ -153,47 +118,21 @@
   </div>
 </section>
 
-<section id="install" class="wrap">
-  <h2 class="reveal">On your PC in 60 seconds</h2>
-  <p class="sec-sub reveal">Free. No store needed. No account, no backend, no catch.</p>
-  <div class="steps">
-    <div class="step reveal"><span>1</span><div><b>Download the folder</b><p>Get the <a href="https://github.com/kabirprokk/insta-enhancer" target="_blank" rel="noopener">GitHub repo</a> (<a href="https://github.com/kabirprokk/insta-enhancer/archive/refs/heads/main.zip">direct ZIP</a>), unzip it, keep the folder on your PC.</p></div></div>
-    <div class="step reveal"><span>2</span><div><b>Open extensions page</b><p>Chrome / Edge / Brave → <code>chrome://extensions</code> → enable <b>Developer mode</b> (top-right).</p></div></div>
-    <div class="step reveal"><span>3</span><div><b>Load unpacked</b><p>Click <b>Load unpacked</b> → select the repo folder → pin the spark icon to toolbar.</p></div></div>
-    <div class="step reveal"><span>4</span><div><b>Open Instagram</b><p>Go to <code>instagram.com</code>, log in, reload once. Click the toolbar icon to toggle features.</p></div></div>
-  </div>
-  <div class="cta reveal">
-    <a class="btn" href="https://github.com/kabirprokk/insta-enhancer/archive/refs/heads/main.zip"><svg class="pic"><use href="#w-download"/></svg> Download ZIP</a>
-    <a class="btn ghost" href="https://github.com/kabirprokk/insta-enhancer" target="_blank" rel="noopener">View repo</a>
-  </div>
-  <p class="tiny">Updating? Pull latest → <code>chrome://extensions</code> → Reload on Inta-Enhancer → reload Instagram tabs.</p>
-</section>
-
-<section id="faq" class="wrap">
-  <h2 class="reveal">Questions, answered honestly</h2>
-  <div class="faq reveal">
-    <button class="q">Is it safe? Does it steal my login?<span>+</span></button>
-    <div class="a">Yes — safe by design. No backend, no analytics, no password handling. It uses your existing Instagram cookies in your own browser (same as the site itself). Settings only live in Chrome storage.</div>
-    <button class="q">Why does Mobile feel need a reload?<span>+</span></button>
-    <div class="a">The iPhone user-agent is applied at request time. Toggle it in the popup, then reload Instagram once. Turn it off to get 100% desktop back.</div>
-    <button class="q">Downloads blocked / blob videos?<span>+</span></button>
-    <div class="a">Some reels are DRM/streaming-protected — the extension will say "protected". Otherwise it queues via chrome.downloads. Right-click → Save is the fallback. MP3 is captured live from the playing video, so it works wherever you can hear sound.</div>
-    <button class="q">Does Meta AI search send data anywhere?<span>+</span></button>
-    <div class="a">No. The "AI card" is a local summary of Instagram's own topsearch API results fetched with your session. No external AI service is called.</div>
-    <button class="q">Will this get my account banned?<span>+</span></button>
-    <div class="a">It only uses the same endpoints the Instagram website uses, at human speed, with caching + aborts. No mass-follow, no spam. Bulk save caps at 12 per action with delays.</div>
-    <button class="q">Can I post reels from PC?<span>+</span></button>
-    <div class="a">Yes — press N, use the + button above search, or Ctrl+K → New post. It opens Instagram's own composer, which supports photo and reel uploads on desktop. If it won't open, turn Mobile feel OFF and reload (IG hides Create in mobile web).</div>
-    <button class="q">Found a bug?<span>+</span></button>
-    <div class="a">Reload the extension at <code>chrome://extensions</code>, hard-reload Instagram (<kbd>Ctrl+Shift+R</kbd>), and try again. Still broken? <a href="bug.html">Report it here</a> — the form opens a pre-filled GitHub Issue.</div>
+<section class="wrap">
+  <h2 class="reveal">Start wherever you like</h2>
+  <p class="sec-sub reveal">Three pages, zero confusion.</p>
+  <div class="grid">
+    <a class="card" href="features.html"><b><svg class="fic"><use href="#w-search"/></svg> See all 18 features</b><p>Every tool explained with a live narration demo.</p></a>
+    <a class="card" href="install.html"><b><svg class="fic"><use href="#w-download"/></svg> Install in 60 seconds</b><p>Download, load unpacked, open Instagram. Done.</p></a>
+    <a class="card" href="faq.html"><b><svg class="fic"><use href="#w-check"/></svg> Questions &amp; bug reports</b><p>Honest answers and a form that files a GitHub issue.</p></a>
   </div>
 </section>
 </main>
 
 <footer>
   <div class="wrap foot-in">
-    <div><b>Inta-Enhancer</b> · OLIN 1.1.a · Made for learning</div>
-    <div class="links"><a href="#install">Install</a><a href="#faq">FAQ</a><a href="bug.html">Report a bug</a><a href="https://github.com/kabirprokk/insta-enhancer" target="_blank" rel="noopener">GitHub</a><a href="https://www.instagram.com/" target="_blank" rel="noopener">Instagram</a></div>
+    <div>© <span id="yr">2026</span> <b>Inta-Enhancer</b> · OLIN 1.1.a · Made for learning · <a href="bug.html">Contact the developer</a></div>
+    <div class="links"><a href="index.html">Home</a><a href="features.html">Features</a><a href="install.html">Install</a><a href="faq.html">FAQ</a><a href="bug.html">Report a bug</a><a href="https://github.com/kabirprokk/insta-enhancer" target="_blank" rel="noopener">GitHub</a></div>
   </div>
 </footer>
 <button id="toTop" aria-label="Back to top">↑</button>
