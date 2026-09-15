@@ -18,7 +18,6 @@
    System colors adapt to IG light/dark automatically — PC look kept. */
 .inta-menu-wrap { position: absolute !important; top: 10px !important; right: 10px !important; z-index: 999999 !important; pointer-events: auto !important; }
 .inta-menu {
-.inta-menu {
   pointer-events: auto !important;
   width: 36px !important; height: 36px !important;
   border-radius: 50% !important; border: none !important;

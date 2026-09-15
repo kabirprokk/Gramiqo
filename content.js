@@ -428,6 +428,7 @@ async function downloadMp3Fast(url) {
   if (!res.ok) throw new Error("HTTP " + res.status);
   const raw = await res.arrayBuffer();
   if (!raw || !raw.byteLength) throw new Error("empty-file");
+  toast("Decoding audio…");
   const AC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
   if (!AC) throw new Error("no-offline");
   const scratch = new AC(1, 44100, 44100);
@@ -448,6 +449,7 @@ async function downloadMp3Fast(url) {
   src.connect(off.destination);
   try { src.start(0, 0, dur); } catch { try { src.start(0); } catch {} }
   const rendered = await off.startRendering();
+  toast("Encoding MP3…");
   const L = rendered.getChannelData(0);
   const R = rendered.numberOfChannels > 1 ? rendered.getChannelData(1) : L;
   const parts = encodePcm(rate, L, R);
@@ -656,12 +658,17 @@ function addMenuToPosts() {
     const pop = document.createElement("div");
     pop.className = "inta-menu-pop";
     pop.setAttribute("role", "menu");
+    try { pop.style.display = "none"; } catch {} // hidden even if CSS fails
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
       const was = pop.classList.contains("open");
       closeAllMenus(null);
-      if (!was) pop.classList.add("open");
+      try { document.querySelectorAll(".inta-menu-pop").forEach((p) => { p.style.display = "none"; }); } catch {}
+      if (!was) {
+        pop.classList.add("open");
+        try { pop.style.display = "block"; } catch {}
+      }
     });
     if (settings.downloadBtn) {
       pop.appendChild(menuRow("download", "Download", () => {
@@ -711,8 +718,13 @@ function addMenuToPosts() {
 let menuDocBound = false;
 function closeAllMenus(except) {
   try {
-    document.querySelectorAll(".inta-menu-pop.open").forEach((p) => {
-      if (p !== except) p.classList.remove("open");
+    // Hide by selector WITHOUT the .open filter: class and inline display
+    // can never desync into a stuck-open dropdown again.
+    document.querySelectorAll(".inta-menu-pop").forEach((p) => {
+      if (p !== except) {
+        try { p.classList.remove("open"); } catch {}
+        try { p.style.display = "none"; } catch {}
+      }
     });
   } catch {}
 }
@@ -755,6 +767,7 @@ function menuRow(icon, label, fn) {
   const b = document.createElement("button");
   b.type = "button";
   b.className = "inta-menu-row";
+  try { b.style.display = "block"; b.style.width = "100%"; } catch {} // stacked even if CSS fails
   b.innerHTML = ic(icon, 15) + "<span></span>";
   b.lastChild.textContent = label;
   swallowToggle(b);
@@ -1550,12 +1563,17 @@ function enhanceReelsPage() {
     const pop = document.createElement("div");
     pop.className = "inta-menu-pop";
     pop.setAttribute("role", "menu");
+    try { pop.style.display = "none"; } catch {} // hidden even if CSS fails
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
       const was = pop.classList.contains("open");
       closeAllMenus(null);
-      if (!was) pop.classList.add("open");
+      try { document.querySelectorAll(".inta-menu-pop").forEach((p) => { p.style.display = "none"; }); } catch {}
+      if (!was) {
+        pop.classList.add("open");
+        try { pop.style.display = "block"; } catch {}
+      }
     });
     pop.appendChild(menuRow("download", "Download", () => {
       const url = video.currentSrc || video.src || video.querySelector("source")?.src || "";
@@ -1711,12 +1729,19 @@ function toast(msg) {
     if (!el) {
       el = document.createElement("div");
       el.id = "inta-toast";
+      // Inline critical look: visible even if content.css ever fails.
+      try {
+        el.style.cssText = "position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:#111;color:#fff;padding:10px 18px;border-radius:20px;font-size:14px;z-index:1000000;max-width:90vw;text-align:center;font-family:sans-serif;";
+      } catch {}
       document.documentElement.appendChild(el);
     }
     el.textContent = String(msg);
     el.classList.add("show");
+    try { el.style.opacity = "1"; } catch {}
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+    toastTimer = setTimeout(() => {
+      try { el.classList.remove("show"); el.style.opacity = "0"; } catch {}
+    }, 2200);
   } catch {}
 }
 })();
