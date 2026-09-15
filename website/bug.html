@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Report a bug — Inta-Enhancer</title>
+<meta name="description" content="Report a bug in Inta-Enhancer. Fill the form and post it straight to GitHub Issues." />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header class="nav">
+  <div class="wrap nav-in">
+    <div class="brand"><a href="index.html" style="text-decoration:none;display:flex;align-items:center;gap:10px;color:inherit"><span class="logo">IE</span><span>Inta-Enhancer <em>OLIN 1.1.a</em></span></a></div>
+    <nav>
+      <a href="index.html#features">Features</a>
+      <a href="index.html#install">Install</a>
+      <a href="index.html#faq">FAQ</a>
+      <a class="btn small" href="https://github.com/kabirprokk/insta-enhancer" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<section class="wrap" style="max-width:720px">
+  <h2>Report a bug</h2>
+  <p class="sec-sub">Fill this in, hit submit — it opens a pre-filled GitHub Issue. You need a (free) GitHub account to post it.</p>
+  <div class="card" style="display:grid;gap:12px">
+    <label style="display:grid;gap:6px;font-size:13px;font-weight:700">Short title
+      <input id="bugTitle" type="text" placeholder="e.g. MP3 button missing on reels" maxlength="120" />
+    </label>
+    <label style="display:grid;gap:6px;font-size:13px;font-weight:700">Where does it happen?
+      <select id="bugArea">
+        <option>Feed / posts</option>
+        <option>Reels</option>
+        <option>Stories</option>
+        <option>Search with Meta AI</option>
+        <option>Profile / bio-links</option>
+        <option>Settings hub / Notes</option>
+        <option>Popup toggles</option>
+        <option>Website</option>
+        <option>Something else</option>
+      </select>
+    </label>
+    <label style="display:grid;gap:6px;font-size:13px;font-weight:700">Steps to reproduce
+      <textarea id="bugSteps" rows="4" placeholder="1. Open instagram.com …&#10;2. Click …&#10;3. See the bug"></textarea>
+    </label>
+    <label style="display:grid;gap:6px;font-size:13px;font-weight:700">What did you expect?
+      <textarea id="bugExpected" rows="2" placeholder="What should have happened?"></textarea>
+    </label>
+    <label style="display:grid;gap:6px;font-size:13px;font-weight:700">What happened instead? (paste any toast / console error)
+      <textarea id="bugActual" rows="3" placeholder="Exact message, e.g. “Couldn't capture audio here”"></textarea>
+    </label>
+    <div class="cta" style="margin:4px 0 0">
+      <button class="btn" id="bugSubmit" type="button">Submit via GitHub</button>
+      <a class="btn ghost" href="https://github.com/kabirprokk/insta-enhancer/issues" target="_blank" rel="noopener">All open issues</a>
+    </div>
+    <p class="tiny">Extension version: 1.0.0 · OLIN 1.1.a — include it if you changed files locally. Before reporting: reload the extension at <code>chrome://extensions</code> and hard-reload Instagram (<kbd>Ctrl+Shift+R</kbd>).</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-in">
+    <div><b>Inta-Enhancer</b> · OLIN 1.1.a · Made for learning</div>
+    <div class="links"><a href="index.html#install">Install</a><a href="bug.html">Report a bug</a><a href="https://github.com/kabirprokk/insta-enhancer" target="_blank" rel="noopener">GitHub</a></div>
+  </div>
+</footer>
+<script>
+document.getElementById("bugSubmit").addEventListener("click", () => {
+  const v = (id) => (document.getElementById(id)?.value || "").trim();
+  const title = v("bugTitle") || "Bug report";
+  const body = [
+    "**Area:** " + v("bugArea"),
+    "**Version:** 1.0.0 (OLIN 1.1.a)",
+    "",
+    "**Steps:**",
+    v("bugSteps") || "-",
+    "",
+    "**Expected:**",
+    v("bugExpected") || "-",
+    "",
+    "**Actual:**",
+    v("bugActual") || "-",
+  ].join("\n");
+  const url = "https://github.com/kabirprokk/insta-enhancer/issues/new?title="
+    + encodeURIComponent("[bug] " + title) + "&body=" + encodeURIComponent(body);
+  window.open(url, "_blank", "noopener");
+});
+</script>
+</body>
+</html>
