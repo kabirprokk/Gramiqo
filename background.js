@@ -11,8 +11,19 @@ const IPHONE_UA =
 const dlQueue = [];
 let dlActive = false;
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg) return false;
+  if (msg.type === "INTA_GET_MEDIA") {
+    // Newest direct video file seen on this tab (beats blob:/protected URLs).
+    try {
+      const arr = mediaByTab.get(sender?.tab?.id) || [];
+      const last = arr[arr.length - 1] || null;
+      sendResponse({ ok: true, url: last ? last.url : "" });
+    } catch {
+      try { sendResponse({ ok: false, url: "" }); } catch {}
+    }
+    return false;
+  }
   if (msg.type === "INTA_DOWNLOAD") {
     queueDownload(msg.url, msg.filename).then(
       () => sendResponse({ ok: true }),
@@ -85,6 +96,43 @@ function guessExt(url) {
     return "jpg";
   }
 }
+
+// --- Direct media URL memory (ultra-fast, unprotected downloads) ---
+// Instagram increasingly serves video as blob:/DRM streams, whose element
+// URL can't be saved. But the real .mp4 file still crosses the network —
+// remember the newest video file per tab so downloads use it directly.
+const mediaByTab = new Map();
+function rememberMedia(details) {
+  try {
+    const u = String(details?.url || "");
+    if (!/\.(mp4|mov|m4v|webm)(\?|#|$)/i.test(u)) return;
+    if (u.includes("sprite") || u.includes("emoji")) return;
+    const tabId = details?.tabId;
+    if (tabId == null || tabId < 0) return;
+    let arr = mediaByTab.get(tabId);
+    if (!arr) {
+      arr = [];
+      mediaByTab.set(tabId, arr);
+    }
+    if (arr.length && arr[arr.length - 1].url === u) return;
+    arr.push({ url: u.split("#")[0], at: Date.now() });
+    while (arr.length > 10) arr.shift();
+  } catch {}
+}
+try {
+  if (chrome.webRequest?.onResponseStarted) {
+    chrome.webRequest.onResponseStarted.addListener(rememberMedia, {
+      urls: ["*://*.fbcdn.net/*", "*://*.cdninstagram.com/*", "*://*.instagram.com/*"],
+    });
+  }
+} catch (e) {
+  console.warn("[Inta-Enhancer] media memory unavailable", e);
+}
+try {
+  chrome.tabs?.onRemoved?.addListener((tabId) => {
+    try { mediaByTab.delete(tabId); } catch {}
+  });
+} catch {}
 
 // --- Mobile-Mode: UA rule + client-hints rule + page-world spoof script ---
 // Three layers so instagram.com reads "iPhone" everywhere it looks:

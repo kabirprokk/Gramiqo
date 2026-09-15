@@ -397,6 +397,43 @@ function downloadVisibleMedia() {
   downloadUrl(m.url, `insta-${m.type}-${Date.now()}.${ext}`);
 }
 
+// Resolve the BEST savable video URL: element URL → network-remembered
+// direct file → page og:video → blob (last resort). Blob/MSE streams are
+// what Instagram protects — the remembered .mp4 beats them every time.
+function sendMsg(msg) {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage(msg, (res) => {
+        if (chrome.runtime.lastError) resolve(null);
+        else resolve(res || null);
+      });
+    } catch {
+      resolve(null);
+    }
+  });
+}
+function pageVideoUrl() {
+  try {
+    const p = pathName();
+    if (!/^\/p\/[^/]+\/?$/.test(p) && !/^\/reel\/[^/]+\/?$/.test(p)) return "";
+    const meta = document.querySelector('meta[property="og:video"], meta[property="og:video:secure_url"]');
+    const u = meta?.getAttribute("content") || meta?.content || "";
+    return /^https?:\/\//.test(u) ? u : "";
+  } catch { return ""; }
+}
+async function resolveDownloadUrl(video) {
+  try {
+    const cur = video ? (video.currentSrc || video.src || "") : "";
+    if (/^https?:\/\//.test(cur) && !cur.startsWith("blob:")) return { url: cur, via: "direct" };
+    const remembered = await sendMsg({ type: "INTA_GET_MEDIA" });
+    if (remembered?.url && /^https?:\/\//.test(remembered.url)) return { url: remembered.url, via: "network" };
+    const og = pageVideoUrl();
+    if (og) return { url: og, via: "page" };
+    if (cur) return { url: cur, via: "blob" };
+  } catch {}
+  return { url: "", via: "" };
+}
+
 /* ---------------- MP3 audio (320kbps, on-device, no server) ----------------
    FAST PATH (new): fetch the video file itself → native decode →
    OfflineAudioContext render at full CPU speed → lamejs 320k MP3.
@@ -408,7 +445,13 @@ async function downloadMp3FromElement(video) {
   if (!video) return toast("Video still loading — wait a second");
   if (!window.lamejs?.Mp3Encoder) return toast("Audio engine missing — reload the extension");
   toast("Preparing MP3…"); // instant feedback — the wait popup
-  const url = video.currentSrc || video.src || "";
+  // Best file first: network-remembered direct .mp4 beats blob/protected.
+  let url = "";
+  try {
+    const r = await resolveDownloadUrl(video);
+    url = r.url || "";
+  } catch {}
+  if (!url) url = video.currentSrc || video.src || "";
   if (url && /^https?:\/\//.test(url)) {
     try {
       await downloadMp3Fast(url);
@@ -422,12 +465,39 @@ async function downloadMp3FromElement(video) {
 
 async function downloadMp3Fast(url) {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => { try { ctrl.abort(); } catch {} }, 60000);
+  const timer = setTimeout(() => { try { ctrl.abort(); } catch {} }, 90000);
   try {
     const res = await fetch(url, { credentials: "include", signal: ctrl.signal });
-  if (!res.ok) throw new Error("HTTP " + res.status);
-  const raw = await res.arrayBuffer();
-  if (!raw || !raw.byteLength) throw new Error("empty-file");
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    // Visible progress: quartile toasts while the file streams in.
+    let raw = null;
+    try {
+      const total = Number(res.headers.get("content-length")) || 0;
+      const reader = res.body && res.body.getReader ? res.body.getReader() : null;
+      if (reader && total > 0) {
+        const chunks = [];
+        let got = 0;
+        let mark = 0;
+        for (;;) {
+          const step = await reader.read();
+          if (step.done) break;
+          const v = step.value;
+          chunks.push(v);
+          got += v.byteLength || v.length || 0;
+          const pct = Math.floor((got / total) * 100);
+          if (pct >= mark + 25 && pct < 100) {
+            mark = pct - (pct % 25);
+            toast(`Fetching audio ${mark}%…`);
+          }
+        }
+        raw = concatU8(chunks, got);
+      } else {
+        raw = await res.arrayBuffer();
+      }
+    } catch (e) {
+      if (!raw) throw e;
+    }
+    if (!raw || !raw.byteLength) throw new Error("empty-file");
   toast("Decoding audio…");
   const AC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
   if (!AC) throw new Error("no-offline");
@@ -452,7 +522,7 @@ async function downloadMp3Fast(url) {
   toast("Encoding MP3…");
   const L = rendered.getChannelData(0);
   const R = rendered.numberOfChannels > 1 ? rendered.getChannelData(1) : L;
-  const parts = encodePcm(rate, L, R);
+  const parts = await encodePcmAsync(rate, L, R);
   if (!parts.length) throw new Error("encode-empty");
   const blob = new Blob(parts, { type: "audio/mpeg" });
   const a = document.createElement("a");
@@ -590,6 +660,58 @@ function concatF32(chunks) {
   return out;
 }
 
+function concatU8(chunks, total) {
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) {
+    try {
+      const u = c instanceof Uint8Array ? c : new Uint8Array(c.buffer || c);
+      out.set(u.subarray(0, Math.min(u.length, total - off)), off);
+      off += Math.min(u.length, total - off);
+    } catch {}
+  }
+  return off > 0 ? out.buffer : new ArrayBuffer(0);
+}
+
+// Non-blocking encode: yields to the page every chunk so long audio never
+// freezes the tab. (Sync encodePcm below stays for the realtime path.)
+async function encodePcmAsync(sampleRate, ch0, ch1) {
+  const sr = sampleRate || 44100;
+  const channels = ch1 && ch1.length === ch0.length ? 2 : 1;
+  const enc = new window.lamejs.Mp3Encoder(channels, sr, 320);
+  const toI16 = (f) => {
+    const o = new Int16Array(f.length);
+    for (let i = 0; i < f.length; i++) {
+      const s = Math.max(-1, Math.min(1, f[i]));
+      o[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    }
+    return o;
+  };
+  const L = toI16(ch0);
+  const R = channels === 2 ? toI16(ch1) : null;
+  const out = [];
+  const FRAME = 1152;
+  let n = 0;
+  for (let i = 0; i < L.length; i += FRAME) {
+    const l = L.subarray(i, i + FRAME);
+    const r = R ? R.subarray(i, i + FRAME) : l;
+    let d = null;
+    try {
+      d = channels === 2 ? enc.encodeBuffer(l, r) : enc.encodeBuffer(l);
+    } catch {
+      break;
+    }
+    if (d && d.length) out.push(new Uint8Array(d.buffer, d.byteOffset, d.length));
+    n += 1;
+    if (n % 512 === 0) await new Promise((r) => setTimeout(r, 0));
+  }
+  try {
+    const end = enc.flush();
+    if (end && end.length) out.push(new Uint8Array(end.buffer, end.byteOffset, end.length));
+  } catch {}
+  return out;
+}
+
 function encodePcm(sampleRate, ch0, ch1) {
   const sr = sampleRate || 44100;
   const channels = ch1 && ch1.length === ch0.length ? 2 : 1;
@@ -671,11 +793,18 @@ function addMenuToPosts() {
       }
     });
     if (settings.downloadBtn) {
-      pop.appendChild(menuRow("download", "Download", () => {
+      pop.appendChild(menuRow("download", "Download", async () => {
         const media = articleMedia(article);
         if (!media) return toast("No media found in this post");
-        const ext = media.type === "video" ? "mp4" : "jpg";
-        downloadUrl(media.url, `insta-${media.type}-${Date.now()}.${ext}`);
+        if (media.type !== "video") {
+          const ext = "jpg";
+          return downloadUrl(media.url, `insta-image-${Date.now()}.${ext}`);
+        }
+        toast("Finding video…");
+        const v = article.querySelector("video");
+        const r = await resolveDownloadUrl(v);
+        if (!r.url) return toast("Video still loading — wait a second");
+        downloadUrl(r.url, `insta-video-${Date.now()}.mp4`);
       }));
       if (article.querySelector("video")) {
         pop.appendChild(menuRow("music", "Audio MP3", () => {
@@ -831,8 +960,7 @@ function copyText(text, okMsg) {
   }
 }
 
-function fallbackCopy(text, okMsg) {
-  try {
+function fallbackCopy(text, okMsg) {  try {
     const ta = document.createElement("textarea");
     ta.value = text;
     ta.style.position = "fixed";
@@ -1603,11 +1731,12 @@ function updateFloatingReelMenu() {
           try { pop.style.display = "block"; } catch {}
         }
       });
-      pop.appendChild(menuRow("download", "Download", () => {
+      pop.appendChild(menuRow("download", "Download", async () => {
+        toast("Finding video…");
         const v = currentReelVideo();
-        const url = v ? (v.currentSrc || v.src || v.querySelector("source")?.src || "") : "";
-        if (!url) return toast("Video still loading — wait a second");
-        downloadUrl(url, `insta-reel-${Date.now()}.mp4`);
+        const r = await resolveDownloadUrl(v);
+        if (!r.url) return toast("Video still loading — wait a second");
+        downloadUrl(r.url, `insta-reel-${Date.now()}.mp4`);
       }));
       pop.appendChild(menuRow("music", "Audio MP3", () => {
         const v = currentReelVideo();

@@ -42,6 +42,7 @@ Updating: pull/ZIP again → `chrome://extensions` → ⟳ Reload → `Ctrl+Shif
 | `downloads` | Saving media/audio files |
 | `declarativeNetRequest (+WithHostAccess)` | iPhone UA + mobile client-hints headers on instagram.com |
 | `tabs` / `activeTab` | Popup buttons (open Instagram, reload on toggle, message the IG tab) |
+| `webRequest` | Remember direct video file URLs per tab (beats protected blob streams) |
 | `scripting` | Page-world mobile spoof, registered only while Mobile feel is ON |
 | Hosts `instagram.com`, `cdninstagram.com`, `fbcdn.net` | Content scripts + media fetching |
 

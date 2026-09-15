@@ -29,6 +29,6 @@
       "run_at": "document_idle"
     }
   ],
-  "permissions": ["storage", "downloads", "declarativeNetRequest", "declarativeNetRequestWithHostAccess", "tabs", "activeTab", "scripting"],
+  "permissions": ["storage", "downloads", "declarativeNetRequest", "declarativeNetRequestWithHostAccess", "tabs", "activeTab", "scripting", "webRequest"],
   "host_permissions": ["*://*.instagram.com/*", "*://*.cdninstagram.com/*", "*://*.fbcdn.net/*"]
 }
