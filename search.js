@@ -814,37 +814,51 @@ async function fetchText(url, signal) {
     clearTimeout(timer);
   }
 }
-/* Keyword REELS from Instagram's public /popular/<keyword>/ pages
-   ("Popular X • N reels" — Watch reels about X…). Same-origin HTML fetch
-   WITH the user's session, so it sees what logged-out scrapers can't.
-   Parses every known embedded shape: classic shortcode/thumbnail JSON,
-   owner + caption + view nodes, and plain server-rendered reel anchors.
-   Best-effort: login walls / markup changes just yield [] and the tag
-   grid fallback carries the panel. */
-async function fetchPopularReels(query, signal) {
-  const out = [];
+/* THE ENGINE (user flow: query → instagram.com/popular/<words> (+ live
+   SERP) → big combined results grid):
+   1. User types words.
+   2. Engine hits Instagram's own Popular pages for those words FIRST
+      (slugs: hyphenated, glued, first word) + the app SERP surfaces,
+      all in parallel with topsearch.
+   3. Everything merges into one deduped pool: popular reels, SERP posts,
+      tag clips — Keyword tab shows the big grid, Reels tab the reel
+      slice, For-you the top picks. Hashtag grids are last-resort only. */
+function popularSlugs(query) {
   try {
     const norm = String(query || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
-    if (!norm) return out;
+    if (!norm) return [];
     const first = norm.split(" ")[0];
-    const slugs = [...new Set([
+    return [...new Set([
       norm.replace(/\s+/g, "-"),
       norm.replace(/\s+/g, ""),
       first,
     ])].filter((s) => s.length >= 2).slice(0, 3);
-    const seen = new Set();
-    for (const slug of slugs) {
-      if (out.length >= 9 || (signal && signal.aborted)) break;
-      let html = "";
-      try { html = await fetchText("https://www.instagram.com/popular/" + encodeURIComponent(slug) + "/", signal); }
-      catch { continue; }
-      if (!html || html.length < 5000) continue;
-      parsePopularJson(html, seen, out);
-      if (out.length < 9) parsePopularAnchors(html, seen, out);
-      if (out.length >= 6) break; // good batch — don't hammer more slugs
+  } catch { return []; }
+}
+async function fetchPopularAll(query, signal, cap = 18) {
+  const out = [];
+  const seen = new Set();
+  try {
+    const slugs = popularSlugs(query);
+    if (!slugs.length) return out;
+    const pages = await Promise.all(slugs.map((slug) =>
+      fetchText("https://www.instagram.com/popular/" + encodeURIComponent(slug) + "/", signal)
+        .then((html) => ({ slug, html }))
+        .catch(() => null)
+    ));
+    for (const pg of pages) {
+      if (!pg || !pg.html || pg.html.length < 5000) continue;
+      if (signal && signal.aborted) break;
+      parsePopularJson(pg.html, seen, out);
+      parsePopularAnchors(pg.html, seen, out);
+      if (out.length >= cap) break;
     }
   } catch {}
-  return out;
+  return out.slice(0, cap);
+}
+async function fetchPopularReels(query, signal) {
+  // Back-compat single-batch wrapper (kept for old callers).
+  return fetchPopularAll(query, signal, 9);
 }
 function cleanThumb(u) {
   try {
@@ -883,7 +897,7 @@ function parsePopularJson(html, seen, out) {
         views: views ? Number(views[1]) || 0 : 0,
         tag: "", author: owner ? owner[1] : "",
         caption: cap ? cap[1].replace(/\\n/g, " ").slice(0, 120) : "",
-        src: "popular",
+        src: "popular", kind: "reel",
       });
     }
   } catch {}
@@ -909,7 +923,7 @@ function parsePopularAnchors(html, seen, out) {
         link: "/reel/" + encodeURIComponent(code) + "/",
         likes: 0, views: 0, tag: "", author: "",
         caption: alt ? alt[1].slice(0, 120) : "",
-        src: "popular",
+        src: "popular", kind: "reel",
       });
     }
   } catch {}
@@ -1017,13 +1031,16 @@ function extractSerpMedia(root, cap = 12) {
         if (!code || !thumb || seen.has(code)) return;
         seen.add(code);
         const pt = String(media?.product_type || "");
-        const link = /clip|reel|igtv/i.test(pt) ? "/reel/" + encodeURIComponent(code) + "/" : "/p/" + encodeURIComponent(code) + "/";
+        const isReel = /clip|reel|igtv/i.test(pt);
+        const link = isReel ? "/reel/" + encodeURIComponent(code) + "/" : "/p/" + encodeURIComponent(code) + "/";
         out.push({
           code, thumb, link,
           likes: media?.like_count || media?.play_count || 0,
+          views: media?.play_count || 0,
           tag: tag || "",
           author: media?.user?.username || media?.caption?.user?.username || "",
           caption: String(media?.caption?.text || "").slice(0, 120),
+          kind: isReel ? "reel" : "post",
         });
       } catch {}
     };
@@ -1052,7 +1069,7 @@ function extractSerpMedia(root, cap = 12) {
         if (out.length >= cap) break;
         if (seen.has(c.code)) continue;
         seen.add(c.code);
-        out.push({ code: c.code, thumb: c.thumb, link: "/p/" + encodeURIComponent(c.code) + "/", likes: c.likes || 0, tag: "", author: "", caption: "" });
+        out.push({ code: c.code, thumb: c.thumb, link: "/p/" + encodeURIComponent(c.code) + "/", likes: c.likes || 0, views: 0, tag: "", author: "", caption: "", kind: "post" });
       }
     }
   } catch {}
@@ -1201,7 +1218,7 @@ async function runSearch(q) {
   aborter = new AbortController();
   const { signal } = aborter;
   if (!q) {
-    lastData = { users: [], hashtags: [], places: [], posts: [], clips: [], reelSource: null, related: [], suggests: [], tracks: [], serpLive: false, _blocked: false };
+    lastData = { users: [], hashtags: [], places: [], posts: [], clips: [], grid: [], reelSource: null, related: [], suggests: [], tracks: [], serpLive: false, _blocked: false };
     renderIntoNative();
     return;
   }
@@ -1213,16 +1230,18 @@ async function runSearch(q) {
   }
   renderSkeleton();
   try {
-    // Real Instagram data first: blended topsearch + app SERP surfaces in
-    // parallel. Each SERP call is probe-and-fallback internally; a surface
-    // Instagram blocks just resolves null and legacy data carries the panel.
-    const [data, topSerp, accSerp, reelSerp, suggestSerp, audioSerp] = await Promise.all([
+    // THE ENGINE: popular pages FIRST (user words → instagram.com/popular/),
+    // app SERP + blended topsearch alongside — all parallel. Probe-and-
+    // fallback per surface; blocked ones resolve null/[] and the rest
+    // carries the panel. Results merge into one big deduped pool.
+    const [data, topSerp, accSerp, reelSerp, suggestSerp, audioSerp, popular] = await Promise.all([
       fetchTopSearch(q, signal).catch(() => null),
       fetchTopSerp(q, signal).catch(() => null),
       fetchAccountSerp(q, signal).catch(() => null),
       fetchReelsSerp(q, signal).catch(() => null),
       fetchKeywordSuggest(q, signal).catch(() => null),
       fetchAudioSerp(q, signal).catch(() => null),
+      fetchPopularAll(q, signal, 18).catch(() => []),
     ]);
     if (mySeq !== searchSeq || signal.aborted) return;
     const legacyUsers = Array.isArray(data?.users) ? data.users : [];
@@ -1245,41 +1264,54 @@ async function runSearch(q) {
       seenH.add(name);
       hashtags.push(h);
     }
-    // Real keyword POSTS from IG's own SERP media grids (not hashtag grids).
-    let posts = extractSerpMedia(topSerp, 12);
-    const serpReels = extractSerpMedia(reelSerp, 9);
     const topTags = hashtags.slice(0, 3).map((h) => h.hashtag?.name).filter(Boolean);
-    // Keyword reels chain: app SERP → public /popular/ page → tag grids.
-    let clips = serpReels.length ? serpReels.slice(0, 6) : [];
-    let reelSource = serpReels.length ? "serp" : null;
-    if (!clips.length && !signal.aborted) {
-      try {
-        const pop = await fetchPopularReels(q, signal);
-        if (pop.length) { clips = pop.slice(0, 6); reelSource = "popular"; }
-      } catch {}
-    }
-    if (!clips.length && topTags.length && !signal.aborted) {
-      try {
-        clips = await fetchSuggestedReels(topTags, signal);
-        if (clips.length) reelSource = "tags";
-      } catch {}
+    let tagClips = [];
+    if (topTags.length && !signal.aborted) {
+      try { tagClips = await fetchSuggestedReels(topTags, signal); } catch {}
     }
     if (mySeq !== searchSeq || signal.aborted) return;
+    // One big pool: popular reels first, then SERP posts/reels, then tag
+    // clips. Normalized (link + kind) so every renderer can use it.
+    const norm = (c, dKind, dLink) => ({
+      code: c.code, thumb: c.thumb,
+      link: c.link || dLink + encodeURIComponent(c.code) + "/",
+      likes: c.likes || 0, views: c.views || 0,
+      tag: c.tag || "", author: c.author || "", caption: c.caption || "",
+      kind: c.kind || dKind, src: c.src || "",
+    });
+    const seenC = new Set();
+    const grid = [];
+    const pushC = (c) => {
+      if (!c || !c.code || !c.thumb || seenC.has(c.code)) return;
+      seenC.add(c.code);
+      grid.push(c);
+    };
+    for (const c of popular || []) pushC(norm(c, "reel", "/reel/"));
+    for (const c of extractSerpMedia(topSerp, 12)) pushC(norm(c, "post", "/p/"));
+    for (const c of extractSerpMedia(reelSerp, 9)) pushC(norm(c, "reel", "/reel/"));
+    for (const c of tagClips || []) pushC(norm(c, "reel", "/reel/"));
+    const reelsOnly = grid.filter((c) => c.kind === "reel");
+    const clips = (reelsOnly.length ? reelsOnly : grid).slice(0, 9);
+    const posts = grid.filter((c) => c.kind === "post").slice(0, 12);
+    let reelSource = null;
+    if ((popular || []).length) reelSource = "popular";
+    else if (extractSerpMedia(reelSerp, 1).length) reelSource = "serp";
+    else if (tagClips.length) reelSource = "tags";
     lastData = {
       users, hashtags,
       places: Array.isArray(data?.places) ? data.places : [],
-      posts, clips, reelSource,
+      posts, clips, grid: grid.slice(0, 18), reelSource,
       related: topTags,
       suggests: collectSuggests(suggestSerp, q, 6),
       tracks: extractTracks(audioSerp, 5),
-      serpLive: !!(topSerp || accSerp || reelSerp),
-      _blocked: !data && !topSerp && !accSerp,
+      serpLive: !!((popular || []).length || topSerp || accSerp || reelSerp),
+      _blocked: !data && !topSerp && !accSerp && !(popular || []).length,
     };
     cacheSet(q, lastData);
     saveRecent(q);
   } catch (err) {
     if (err?.name === "AbortError") return;
-    lastData = { users: [], hashtags: [], places: [], posts: [], clips: [], reelSource: null, related: [], suggests: [], tracks: [], serpLive: false, _blocked: true };
+    lastData = { users: [], hashtags: [], places: [], posts: [], clips: [], grid: [], reelSource: null, related: [], suggests: [], tracks: [], serpLive: false, _blocked: true };
   }
   if (mySeq === searchSeq) renderIntoNative();
 }
@@ -1356,7 +1388,7 @@ function renderIntoNative() {
   } else if (activeTab === "foryou") {
     const places = placeRows(2);
     // Keyword-first: direct keyword links come before the #tag conversion.
-    html += aiCard(clean, noSpace, tagUrl, keywordUrl) + keywordDirectRows(clean, keywordUrl, tagUrl, noSpace) + postsGrid((lastData.posts || []).slice(0, 6), "Posts for these words") + reelsGrid(false, tagUrl, noSpace, keywordUrl, clean) + rowSection("Accounts", accountRows(3, noSpace)) + rowSection("Tags", tagRows(3, tagUrl, noSpace, false)) + (places ? rowSection("Places", places) : "");
+    html += aiCard(clean, noSpace, tagUrl, keywordUrl) + keywordDirectRows(clean, keywordUrl, tagUrl, noSpace) + postsGrid((Array.isArray(lastData.grid) && lastData.grid.length ? lastData.grid : (lastData.posts || [])).slice(0, 6), "Results for these words") + reelsGrid(false, tagUrl, noSpace, keywordUrl, clean) + rowSection("Accounts", accountRows(3, noSpace)) + rowSection("Tags", tagRows(3, tagUrl, noSpace, false)) + (places ? rowSection("Places", places) : "");
   }
   else if (activeTab === "accounts") html += rowSection("Accounts", accountRows(8, noSpace));
   else if (activeTab === "reels") html += reelsGrid(true, tagUrl, noSpace, keywordUrl, clean) + relatedPills();
@@ -1676,8 +1708,10 @@ function keywordSection(clean, noSpace, tagUrl, keywordUrl) {
     html += `<div class="inta-pills">` + tokens.map((t) =>
       `<button type="button" class="inta-pill" data-ask="${escAttr(t)}">${esc(t)}</button>`).join("") + `</div>`;
   }
-  // Real keyword POSTS from Instagram's SERP — the actual keyword output.
-  html += postsGrid((lastData.posts || []).slice(0, 6), "Posts for these words");
+  // THE BIG GRID: everything Instagram returned for these words —
+  // popular reels, SERP posts, tag clips — deduped into one pool.
+  const grid = Array.isArray(lastData.grid) ? lastData.grid : [];
+  html += postsGrid(grid.slice(0, 12), grid.length ? `Results for these words (${grid.length})` : "Results for these words");
 
   const userRow = (u) => {
     const user = u.user || {};
