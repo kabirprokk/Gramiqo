@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://insta-enhancer.vercel.app/sitemap.xml
