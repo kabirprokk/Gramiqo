@@ -38,7 +38,7 @@ let searchSeq = 0;
 // One-click diagnostics: every network surface records its outcome here
 // (surface, HTTP/error, ms, result size). Popup "Copy diagnostics" sends
 // INTA_GET_DIAG and pastes this — no DevTools needed to debug search.
-const INTA_VER = "1.2.1 (OLIN 1.2.b)";
+const INTA_VER = "1.2.2 (OLIN 1.2.c)";
 const diagFetches = [];
 function diagRec(surface, ok, info) {
   try {

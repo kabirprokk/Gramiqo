@@ -128,7 +128,7 @@ async function init() {
   scheduleEnhance(0);
   onRouteChange();
   watchBlankPage();
-  console.log("[Inta-Enhancer] OLIN 1.1.e loaded. Keys: D=download C=caption F=fullscreen P=PiP /=search Ctrl+K=commands");
+  console.log("[Inta-Enhancer] OLIN 1.2.c loaded. Keys: D=download C=caption F=fullscreen P=PiP /=search Ctrl+K=commands");
 }
 
 /* Blank-page watchdog: if Mobile feel's iPhone UA leaves instagram.com an
@@ -179,13 +179,15 @@ function scheduleEnhance(delay = 900) {
 
 function enhanceAll() {
   if (location.hostname !== "www.instagram.com" && !location.hostname.endsWith(".instagram.com")) return;
-  addMenuToPosts();
-  enhanceReelsPage();
-  enhanceProfilePage();
-  enhanceEditPage();
-  enhanceLinksEditor();
-  enhanceTopSearch();
-  makeAvatarsClickable();
+  // Isolated steps: one failing injector can never kill the rest.
+  const steps = [addMenuToPosts, enhanceReelsPage, enhanceProfilePage, enhanceEditPage, enhanceLinksEditor, enhanceTopSearch, makeAvatarsClickable];
+  for (const fn of steps) {
+    try {
+      fn();
+    } catch (e) {
+      console.warn("[Inta-Enhancer] enhance step failed", fn && fn.name, e);
+    }
+  }
 }
 
 function onRouteChange() {
@@ -419,7 +421,10 @@ async function downloadMp3FromElement(video) {
 }
 
 async function downloadMp3Fast(url) {
-  const res = await fetch(url, { credentials: "include" });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => { try { ctrl.abort(); } catch {} }, 60000);
+  try {
+    const res = await fetch(url, { credentials: "include", signal: ctrl.signal });
   if (!res.ok) throw new Error("HTTP " + res.status);
   const raw = await res.arrayBuffer();
   if (!raw || !raw.byteLength) throw new Error("empty-file");
@@ -456,6 +461,11 @@ async function downloadMp3Fast(url) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 15000);
   toast("Audio saved!");
+  } catch (e) {
+    clearTimeout(timer);
+    throw e;
+  }
+  clearTimeout(timer);
 }
 
 async function downloadMp3Realtime(video) {
