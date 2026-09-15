@@ -815,8 +815,10 @@ async function fetchText(url, signal) {
   }
 }
 /* Keyword REELS from Instagram's public /popular/<keyword>/ pages
-   ("Popular X • N reels" — Watch reels about X…). Same-origin HTML fetch,
-   shortcodes + thumbnails regex-paired from the embedded payload.
+   ("Popular X • N reels" — Watch reels about X…). Same-origin HTML fetch
+   WITH the user's session, so it sees what logged-out scrapers can't.
+   Parses every known embedded shape: classic shortcode/thumbnail JSON,
+   owner + caption + view nodes, and plain server-rendered reel anchors.
    Best-effort: login walls / markup changes just yield [] and the tag
    grid fallback carries the panel. */
 async function fetchPopularReels(query, signal) {
@@ -824,10 +826,12 @@ async function fetchPopularReels(query, signal) {
   try {
     const norm = String(query || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
     if (!norm) return out;
+    const first = norm.split(" ")[0];
     const slugs = [...new Set([
       norm.replace(/\s+/g, "-"),
       norm.replace(/\s+/g, ""),
-    ])].filter((s) => s.length >= 2).slice(0, 2);
+      first,
+    ])].filter((s) => s.length >= 2).slice(0, 3);
     const seen = new Set();
     for (const slug of slugs) {
       if (out.length >= 9 || (signal && signal.aborted)) break;
@@ -835,27 +839,82 @@ async function fetchPopularReels(query, signal) {
       try { html = await fetchText("https://www.instagram.com/popular/" + encodeURIComponent(slug) + "/", signal); }
       catch { continue; }
       if (!html || html.length < 5000) continue;
-      const codeRe = /"shortcode"\s*:\s*"([A-Za-z0-9_-]{5,})"/g;
-      let m;
-      let guard = 0;
-      while ((m = codeRe.exec(html)) && out.length < 9 && guard < 60) {
-        guard += 1;
-        const code = m[1];
-        if (seen.has(code)) continue;
-        seen.add(code);
-        const win = html.slice(Math.max(0, m.index - 300), m.index + 1500);
-        const t = win.match(/"(?:thumbnail_src|display_url|thumbnail_url)"\s*:\s*"([^"]{20,2000})"/);
-        if (!t) continue; // no paired thumbnail — skip, never cross-pair
-        let thumb = t[1].replace(/\\\//g, "/").replace(/\\u0026/gi, "&");
-        if (thumb.includes("profile_pic") || thumb.includes("s150x150")) continue;
-        const a = win.match(/"username"\s*:\s*"([A-Za-z0-9._]{2,30})"/);
-        out.push({
-          code, thumb,
-          link: "/reel/" + encodeURIComponent(code) + "/",
-          likes: 0, tag: "", author: a ? a[1] : "", caption: "",
-          src: "popular",
-        });
-      }
+      parsePopularJson(html, seen, out);
+      if (out.length < 9) parsePopularAnchors(html, seen, out);
+      if (out.length >= 6) break; // good batch — don't hammer more slugs
+    }
+  } catch {}
+  return out;
+}
+function cleanThumb(u) {
+  try {
+    u = String(u || "").replace(/\\\//g, "/").replace(/\\u0026/gi, "&").replace(/&amp;/g, "&");
+    if (!/cdninstagram\.com|fbcdn\.net/i.test(u)) return "";
+    if (/profile_pic|s150x150|sprite|emoji/i.test(u)) return "";
+    return u;
+  } catch { return ""; }
+}
+function parsePopularJson(html, seen, out) {
+  try {
+    const codeRe = /"shortcode"\s*:\s*"([A-Za-z0-9_-]{5,})"/g;
+    let m;
+    let guard = 0;
+    while ((m = codeRe.exec(html)) && out.length < 9 && guard < 80) {
+      guard += 1;
+      const code = m[1];
+      if (seen.has(code)) continue;
+      const win = html.slice(Math.max(0, m.index - 400), m.index + 2500);
+      const t = win.match(/"(?:thumbnail_src|display_url|thumbnail_url)"\s*:\s*"([^"]{20,2000})"/);
+      if (!t) continue; // no paired thumbnail — skip, never cross-pair
+      const thumb = cleanThumb(t[1]);
+      if (!thumb) continue;
+      seen.add(code);
+      const owner = win.match(/"owner"\s*:\s*\{\s*"username"\s*:\s*"([A-Za-z0-9._]{2,30})"/)
+        || win.match(/"username"\s*:\s*"([A-Za-z0-9._]{2,30})"/);
+      const cap = win.match(/"text"\s*:\s*"([^"]{2,300})"/);
+      const views = win.match(/"(?:video_view_count|view_count|play_count)"\s*:\s*(\d{1,12})/);
+      const likes = win.match(/"(?:like_count|edge_liked_by"\s*:\s*\{\s*"count"\s*:\s*(\d{1,12})|edge_liked_by)/);
+      let likeCount = 0;
+      const lm = win.match(/"like_count"\s*:\s*(\d{1,12})/) || win.match(/"edge_liked_by"\s*:\s*\{\s*"count"\s*:\s*(\d{1,12})/);
+      if (lm) likeCount = Number(lm[1]) || 0;
+      out.push({
+        code, thumb,
+        link: "/reel/" + encodeURIComponent(code) + "/",
+        likes: likeCount,
+        views: views ? Number(views[1]) || 0 : 0,
+        tag: "", author: owner ? owner[1] : "",
+        caption: cap ? cap[1].replace(/\\n/g, " ").slice(0, 120) : "",
+        src: "popular",
+      });
+    }
+  } catch {}
+}
+function parsePopularAnchors(html, seen, out) {
+  // Server-rendered fallback: <a href="/reel/CODE/">…<img src="THUMB" alt="CAPTION">
+  try {
+    const aRe = /<a[^>]+href="\/reel\/([A-Za-z0-9_-]{5,})\/"[^>]*>([\s\S]{0,3000}?)<\/a>/gi;
+    let m;
+    let guard = 0;
+    while ((m = aRe.exec(html)) && out.length < 9 && guard < 60) {
+      guard += 1;
+      const code = m[1];
+      if (seen.has(code)) continue;
+      const inner = m[2] || "";
+      const im = inner.match(/<img[^>]+src="([^"]{20,2000})"[^>]*>/i);
+      const alt = inner.match(/alt="([^"]{0,200})"/i);
+      const thumb = im ? cleanThumb(im[1]) : "";
+      if (!thumb) continue;
+      seen.add(code);
+      out.push({
+        code, thumb,
+        link: "/reel/" + encodeURIComponent(code) + "/",
+        likes: 0, views: 0, tag: "", author: "",
+        caption: alt ? alt[1].slice(0, 120) : "",
+        src: "popular",
+      });
+    }
+  } catch {}
+}
     }
   } catch {}
   return out;
@@ -1667,7 +1726,7 @@ function keywordSection(clean, noSpace, tagUrl, keywordUrl) {
       ? ` <span class="inta-kw-badge inta-live">IG popular page</span>`
       : lastData.reelSource === "serp" ? ` <span class="inta-kw-badge inta-live">live IG results</span>` : "";
     html += `<div class="inta-sec">Reels for these words${srcBadge}</div><div class="inta-reel-grid">` + rankedClips.slice(0, 6).map((c) =>
-      `<a href="${c.link || ("/reel/" + encodeURIComponent(c.code) + "/")}" class="inta-reel" title="${escAttr((c.author ? "@" + c.author + " — " : "") + clean)}"><img src="${escAttr(c.thumb)}" loading="lazy" referrerpolicy="no-referrer" draggable="false" alt="" /><span>${ic("play", 10)} ${fmt(c.likes)}</span></a>`
+      `<a href="${c.link || ("/reel/" + encodeURIComponent(c.code) + "/")}" class="inta-reel" title="${escAttr((c.author ? "@" + c.author + " — " : "") + clean)}"><img src="${escAttr(c.thumb)}" loading="lazy" referrerpolicy="no-referrer" draggable="false" alt="" /><span>${ic("play", 10)} ${fmt(c.views || c.likes)}</span></a>`
     ).join("") + `</div>`;
   }
   if (keywordUrl) {
@@ -1681,7 +1740,7 @@ function postsGrid(posts, title) {
   // actual post/reel — author shown under the overlay count when known.
   if (!posts?.length) return "";
   return `<div class="inta-sec">${esc(title || "Posts")}</div><div class="inta-reel-grid">` + posts.map((c) =>
-    `<a href="${c.link || ("/p/" + encodeURIComponent(c.code) + "/")}" class="inta-reel" title="${escAttr((c.author ? "@" + c.author + " — " : "") + (c.caption || ""))}"><img src="${escAttr(c.thumb)}" loading="lazy" referrerpolicy="no-referrer" draggable="false" alt="" /><span>${ic("play", 10)} ${fmt(c.likes)}</span></a>`
+    `<a href="${c.link || ("/p/" + encodeURIComponent(c.code) + "/")}" class="inta-reel" title="${escAttr((c.author ? "@" + c.author + " — " : "") + (c.caption || ""))}"><img src="${escAttr(c.thumb)}" loading="lazy" referrerpolicy="no-referrer" draggable="false" alt="" /><span>${ic("play", 10)} ${fmt(c.views || c.likes)}</span></a>`
   ).join("") + `</div>`;
 }
 
