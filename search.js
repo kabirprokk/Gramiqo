@@ -803,6 +803,63 @@ async function fetchJson(url, signal) {
     clearTimeout(timer);
   }
 }
+async function fetchText(url, signal) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { credentials: "same-origin", headers: { "x-requested-with": "XMLHttpRequest" }, signal: signal || ctrl.signal });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return await res.text();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+/* Keyword REELS from Instagram's public /popular/<keyword>/ pages
+   ("Popular X • N reels" — Watch reels about X…). Same-origin HTML fetch,
+   shortcodes + thumbnails regex-paired from the embedded payload.
+   Best-effort: login walls / markup changes just yield [] and the tag
+   grid fallback carries the panel. */
+async function fetchPopularReels(query, signal) {
+  const out = [];
+  try {
+    const norm = String(query || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+    if (!norm) return out;
+    const slugs = [...new Set([
+      norm.replace(/\s+/g, "-"),
+      norm.replace(/\s+/g, ""),
+    ])].filter((s) => s.length >= 2).slice(0, 2);
+    const seen = new Set();
+    for (const slug of slugs) {
+      if (out.length >= 9 || (signal && signal.aborted)) break;
+      let html = "";
+      try { html = await fetchText("https://www.instagram.com/popular/" + encodeURIComponent(slug) + "/", signal); }
+      catch { continue; }
+      if (!html || html.length < 5000) continue;
+      const codeRe = /"shortcode"\s*:\s*"([A-Za-z0-9_-]{5,})"/g;
+      let m;
+      let guard = 0;
+      while ((m = codeRe.exec(html)) && out.length < 9 && guard < 60) {
+        guard += 1;
+        const code = m[1];
+        if (seen.has(code)) continue;
+        seen.add(code);
+        const win = html.slice(Math.max(0, m.index - 300), m.index + 1500);
+        const t = win.match(/"(?:thumbnail_src|display_url|thumbnail_url)"\s*:\s*"([^"]{20,2000})"/);
+        if (!t) continue; // no paired thumbnail — skip, never cross-pair
+        let thumb = t[1].replace(/\\\//g, "/").replace(/\\u0026/gi, "&");
+        if (thumb.includes("profile_pic") || thumb.includes("s150x150")) continue;
+        const a = win.match(/"username"\s*:\s*"([A-Za-z0-9._]{2,30})"/);
+        out.push({
+          code, thumb,
+          link: "/reel/" + encodeURIComponent(code) + "/",
+          likes: 0, tag: "", author: a ? a[1] : "", caption: "",
+          src: "popular",
+        });
+      }
+    }
+  } catch {}
+  return out;
+}
 async function fetchTopSearch(query, signal) {
   const rank = Math.random().toString(36).slice(2);
   return fetchJson(
@@ -1090,7 +1147,7 @@ async function runSearch(q) {
   aborter = new AbortController();
   const { signal } = aborter;
   if (!q) {
-    lastData = { users: [], hashtags: [], places: [], posts: [], clips: [], related: [], suggests: [], tracks: [], serpLive: false, _blocked: false };
+    lastData = { users: [], hashtags: [], places: [], posts: [], clips: [], reelSource: null, related: [], suggests: [], tracks: [], serpLive: false, _blocked: false };
     renderIntoNative();
     return;
   }
@@ -1138,15 +1195,26 @@ async function runSearch(q) {
     let posts = extractSerpMedia(topSerp, 12);
     const serpReels = extractSerpMedia(reelSerp, 9);
     const topTags = hashtags.slice(0, 3).map((h) => h.hashtag?.name).filter(Boolean);
+    // Keyword reels chain: app SERP → public /popular/ page → tag grids.
     let clips = serpReels.length ? serpReels.slice(0, 6) : [];
+    let reelSource = serpReels.length ? "serp" : null;
+    if (!clips.length && !signal.aborted) {
+      try {
+        const pop = await fetchPopularReels(q, signal);
+        if (pop.length) { clips = pop.slice(0, 6); reelSource = "popular"; }
+      } catch {}
+    }
     if (!clips.length && topTags.length && !signal.aborted) {
-      try { clips = await fetchSuggestedReels(topTags, signal); } catch {}
+      try {
+        clips = await fetchSuggestedReels(topTags, signal);
+        if (clips.length) reelSource = "tags";
+      } catch {}
     }
     if (mySeq !== searchSeq || signal.aborted) return;
     lastData = {
       users, hashtags,
       places: Array.isArray(data?.places) ? data.places : [],
-      posts, clips,
+      posts, clips, reelSource,
       related: topTags,
       suggests: collectSuggests(suggestSerp, q, 6),
       tracks: extractTracks(audioSerp, 5),
@@ -1157,7 +1225,7 @@ async function runSearch(q) {
     saveRecent(q);
   } catch (err) {
     if (err?.name === "AbortError") return;
-    lastData = { users: [], hashtags: [], places: [], posts: [], clips: [], related: [], suggests: [], tracks: [], serpLive: false, _blocked: true };
+    lastData = { users: [], hashtags: [], places: [], posts: [], clips: [], reelSource: null, related: [], suggests: [], tracks: [], serpLive: false, _blocked: true };
   }
   if (mySeq === searchSeq) renderIntoNative();
 }
@@ -1595,8 +1663,11 @@ function keywordSection(clean, noSpace, tagUrl, keywordUrl) {
   if (lastData.clips?.length) {
     const rankedClips = [...lastData.clips].sort((a, b) =>
       keywordMatchInfo((b.tag || ""), clean).score - keywordMatchInfo((a.tag || ""), clean).score);
-    html += `<div class="inta-sec">Reels for these words</div><div class="inta-reel-grid">` + rankedClips.slice(0, 6).map((c) =>
-      `<a href="/reel/${encodeURIComponent(c.code)}/" class="inta-reel" title="${escAttr(clean)}"><img src="${escAttr(c.thumb)}" loading="lazy" referrerpolicy="no-referrer" draggable="false" alt="" /><span>${ic("play", 10)} ${fmt(c.likes)}</span></a>`
+    const srcBadge = lastData.reelSource === "popular"
+      ? ` <span class="inta-kw-badge inta-live">IG popular page</span>`
+      : lastData.reelSource === "serp" ? ` <span class="inta-kw-badge inta-live">live IG results</span>` : "";
+    html += `<div class="inta-sec">Reels for these words${srcBadge}</div><div class="inta-reel-grid">` + rankedClips.slice(0, 6).map((c) =>
+      `<a href="${c.link || ("/reel/" + encodeURIComponent(c.code) + "/")}" class="inta-reel" title="${escAttr((c.author ? "@" + c.author + " — " : "") + clean)}"><img src="${escAttr(c.thumb)}" loading="lazy" referrerpolicy="no-referrer" draggable="false" alt="" /><span>${ic("play", 10)} ${fmt(c.likes)}</span></a>`
     ).join("") + `</div>`;
   }
   if (keywordUrl) {

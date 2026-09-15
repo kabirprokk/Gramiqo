@@ -188,9 +188,37 @@ async function applySpoofScript(on) {
   }
 }
 
+// One-time heal (v1.1.3): Mobile feel defaulted ON in 1.0.x–1.1.2 and its
+// iPhone UA blanked instagram.com for desktop users. That bad value lives
+// in chrome.storage.sync, so reinstalls kept resurrecting it. On worker
+// start (install/update/reload/browser-start) migrate it OFF once, drop
+// the spoof rules, and reload open IG tabs so the fix is visible without
+// the user hunting through settings. Explicit opt-ins AFTER this run are
+// respected (flagged).
+async function migrateMobileDefault() {
+  try {
+    const s = await chrome.storage.sync.get({ mobileMode: false, intaMigrated113: false });
+    if (s.mobileMode === true && s.intaMigrated113 !== true) {
+      await chrome.storage.sync.set({ mobileMode: false, intaMigrated113: true });
+      try {
+        const tabs = await chrome.tabs.query({ url: "*://*.instagram.com/*" });
+        for (const t of tabs) {
+          if (t.id != null) {
+            try { await chrome.tabs.reload(t.id); } catch {}
+          }
+        }
+      } catch {}
+    } else if (s.intaMigrated113 !== true) {
+      try { await chrome.storage.sync.set({ intaMigrated113: true }); } catch {}
+    }
+  } catch (e) {
+    console.warn("[Inta-Enhancer] migration check failed", e);
+  }
+}
+
 chrome.runtime.onInstalled.addListener(applyMobileMode);
 chrome.runtime.onStartup.addListener(applyMobileMode);
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "sync" && changes.mobileMode) applyMobileMode();
 });
-applyMobileMode();
+migrateMobileDefault().then(() => applyMobileMode());

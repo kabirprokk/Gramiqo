@@ -127,7 +127,28 @@ async function init() {
 
   scheduleEnhance(0);
   onRouteChange();
-  console.log("[Inta-Enhancer] OLIN 1.1.a loaded. Keys: D=download C=caption F=fullscreen P=PiP /=search Ctrl+K=commands");
+  watchBlankPage();
+  console.log("[Inta-Enhancer] OLIN 1.1.e loaded. Keys: D=download C=caption F=fullscreen P=PiP /=search Ctrl+K=commands");
+}
+
+/* Blank-page watchdog: if Mobile feel's iPhone UA leaves instagram.com an
+   empty shell (no readable content after load), say so with the one-tap
+   fix instead of silence. Only ever fires when Mobile feel is ON. */
+let blankWarned = false;
+function watchBlankPage() {
+  try {
+    setTimeout(() => {
+      try {
+        if (blankWarned || !settings.mobileMode || document.hidden) return;
+        const main = document.querySelector("main");
+        const textLen = (main?.innerText || document.body?.innerText || "").trim().length;
+        const hasMedia = !!document.querySelector("main article, main video, main img, nav a[href]");
+        if (main && (textLen > 300 || hasMedia)) return; // page is alive
+        blankWarned = true;
+        toast("Instagram looks blank with Mobile feel ON — turn it OFF in the popup");
+      } catch {}
+    }, 12000);
+  } catch {}
 }
 
 /* ---------------- scheduler ---------------- */
