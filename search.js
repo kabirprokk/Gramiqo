@@ -811,6 +811,191 @@ async function fetchTopSearch(query, signal) {
     signal
   );
 }
+
+/* ---------- REAL Instagram keyword search (fbsearch SERP) ----------
+   Same surface the official app uses for Search → Top / Accounts /
+   Reels (fbsearch/top_serp, account_serp, reels_serp, keyword_typeahead,
+   users/search, tags/search, music/audio_global_search). Called with the
+   user's own web-session cookies — the same auth as topsearch. Every
+   call is probe-and-fallback: web variant first, app variant second,
+   legacy topsearch data last. Nothing here can blank the panel. */
+function tzOffset() {
+  try { return -new Date().getTimezoneOffset() * 60; } catch { return 0; }
+}
+function serpRank() {
+  try { return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2); }
+  catch { return "inta"; }
+}
+async function fetchSerp(path, params, signal) {
+  const qs = new URLSearchParams();
+  for (const k of Object.keys(params || {})) {
+    const v = params[k];
+    if (v == null || v === "") continue;
+    qs.append(k, String(v));
+  }
+  return fetchJson("https://www.instagram.com/api/v1/" + path + "/?" + qs.toString(), signal);
+}
+async function tryPaths(paths, signal) {
+  for (const [p, pr] of paths) {
+    try {
+      const j = await fetchSerp(p, pr, signal);
+      if (j && (j.status === "ok" || j.users || j.media_grid || j.items || j.results || j.suggestions || j.stream_rows)) return j;
+    } catch {}
+  }
+  return null;
+}
+function fetchTopSerp(query, signal) {
+  const base = { timezone_offset: tzOffset(), query, rank_token: serpRank() };
+  return tryPaths([
+    ["fbsearch/web/top_serp", { ...base, search_surface: "top_serp" }],
+    ["fbsearch/top_serp", { ...base, search_surface: "top_serp" }],
+  ], signal);
+}
+function fetchAccountSerp(query, signal) {
+  const base = { timezone_offset: tzOffset(), query };
+  return tryPaths([
+    ["fbsearch/account_serp", { ...base, search_surface: "account_serp" }],
+    ["users/search", { search_surface: "user_search_page", timezone_offset: tzOffset(), count: 30, q: query }],
+  ], signal);
+}
+function fetchReelsSerp(query, signal) {
+  const base = { timezone_offset: tzOffset(), query, rank_token: serpRank() };
+  return tryPaths([
+    ["fbsearch/web/reels_serp", { ...base, search_surface: "clips_search_page" }],
+    ["fbsearch/reels_serp", { ...base, search_surface: "clips_search_page" }],
+  ], signal);
+}
+function fetchKeywordSuggest(query, signal) {
+  const base = { query, context: "blended", count: 12 };
+  return tryPaths([
+    ["fbsearch/keyword_typeahead", { ...base, search_surface: "typeahead_search_page", timezone_offset: tzOffset() }],
+    ["fbsearch/typeahead_stream", { ...base, search_surface: "typeahead_search_page", timezone_offset: tzOffset() }],
+  ], signal);
+}
+function fetchAudioSerp(query, signal) {
+  return tryPaths([
+    ["music/audio_global_search", { query, browse_session_id: serpRank() }],
+  ], signal);
+}
+// Normalize the two user shapes: [{user}] (topsearch) vs [user…] (account_serp).
+function serpUsers(root) {
+  try {
+    const list = Array.isArray(root?.users) ? root.users : [];
+    if (!list.length) return [];
+    return list[0] && list[0].user ? list : list.map((u) => ({ user: u }));
+  } catch { return []; }
+}
+function serpHashtags(root) {
+  try {
+    if (Array.isArray(root?.hashtags) && root.hashtags.length)
+      return root.hashtags[0]?.hashtag ? root.hashtags : root.hashtags.map((t) => ({ hashtag: t }));
+    if (Array.isArray(root?.results) && root.results.length)
+      return root.results.map((t) => ({ hashtag: t }));
+    return [];
+  } catch { return []; }
+}
+// Real keyword POSTS from a SERP media_grid (top_serp / reels_serp).
+function extractSerpMedia(root, cap = 12) {
+  const out = [];
+  const seen = new Set();
+  try {
+    const push = (media, tag) => {
+      try {
+        const code = media?.code;
+        const thumb = media?.image_versions2?.candidates?.[0]?.url || "";
+        if (!code || !thumb || seen.has(code)) return;
+        seen.add(code);
+        const pt = String(media?.product_type || "");
+        const link = /clip|reel|igtv/i.test(pt) ? "/reel/" + encodeURIComponent(code) + "/" : "/p/" + encodeURIComponent(code) + "/";
+        out.push({
+          code, thumb, link,
+          likes: media?.like_count || media?.play_count || 0,
+          tag: tag || "",
+          author: media?.user?.username || media?.caption?.user?.username || "",
+          caption: String(media?.caption?.text || "").slice(0, 120),
+        });
+      } catch {}
+    };
+    const grids = [];
+    if (root?.media_grid) grids.push(root.media_grid);
+    if (Array.isArray(root?.grids)) grids.push(...root.grids);
+    for (const g of grids) {
+      for (const s of g?.sections || []) {
+        const lc = s?.layout_content || {};
+        for (const m of lc.medias || []) push(m?.media || m, "");
+        for (const m of lc.fill_items || []) push(m?.media || m, "");
+        const one = lc.one_by_two_item || {};
+        if (one.media) push(one.media, "");
+        for (const it of one?.clips?.items || []) push(it?.media || it, "");
+      }
+    }
+    // reels_serp sometimes nests under clips/items directly.
+    for (const it of root?.clips?.items || []) push(it?.media || it, "");
+    for (const it of root?.items || []) {
+      if (it?.media) push(it.media, "");
+      else if (it?.code) push(it, "");
+    }
+    if (!out.length && root) {
+      // Last resort: any {code, image_versions2} media object in the payload.
+      for (const c of deepScanClips(root, "", cap)) {
+        if (out.length >= cap) break;
+        if (seen.has(c.code)) continue;
+        seen.add(c.code);
+        out.push({ code: c.code, thumb: c.thumb, link: "/p/" + encodeURIComponent(c.code) + "/", likes: c.likes || 0, tag: "", author: "", caption: "" });
+      }
+    }
+  } catch {}
+  return out.slice(0, cap);
+}
+// Real keyword suggestion strings (typeahead payloads vary — scan likely keys).
+function collectSuggests(root, query, cap = 6) {
+  const out = [];
+  const seen = new Set([String(query || "").toLowerCase()]);
+  try {
+    const take = (s) => {
+      s = String(s || "").trim();
+      if (s.length < 2 || s.length > 60) return;
+      const k = s.toLowerCase();
+      if (seen.has(k)) return;
+      seen.add(k);
+      if (out.length < cap) out.push(s);
+    };
+    const stack = [root];
+    let steps = 0;
+    while (stack.length && out.length < cap && steps < 1500) {
+      steps += 1;
+      const cur = stack.pop();
+      if (!cur || typeof cur !== "object") continue;
+      if (Array.isArray(cur)) { for (let i = cur.length - 1; i >= 0; i--) stack.push(cur[i]); continue; }
+      for (const key of ["keyword", "query", "text", "suggestion", "title"]) {
+        if (typeof cur[key] === "string") take(cur[key]);
+      }
+      if (Array.isArray(cur.suggestions)) for (const s of cur.suggestions) stack.push(s);
+      if (Array.isArray(cur.keywords)) for (const s of cur.keywords) stack.push(s);
+      if (Array.isArray(cur.stream_rows)) for (const r of cur.stream_rows) stack.push(r);
+    }
+  } catch {}
+  return out;
+}
+function extractTracks(root, cap = 5) {
+  const out = [];
+  const seen = new Set();
+  try {
+    for (const it of root?.items || []) {
+      const t = it?.track || it;
+      const title = t?.title || t?.display_title || "";
+      if (!title || seen.has(title.toLowerCase())) continue;
+      seen.add(title.toLowerCase());
+      out.push({
+        title,
+        artist: t?.subtitle || t?.artist_name || t?.artist || "",
+        duration: t?.duration_ms ? Math.round(Number(t.duration_ms) / 1000) + "s" : "",
+      });
+      if (out.length >= cap) break;
+    }
+  } catch {}
+  return out;
+}
 async function fetchTagClips(tagName, signal, perTag = 3) {
   try {
     const j = await fetchJson(
@@ -905,7 +1090,7 @@ async function runSearch(q) {
   aborter = new AbortController();
   const { signal } = aborter;
   if (!q) {
-    lastData = { users: [], hashtags: [], places: [], clips: [], related: [], _blocked: false };
+    lastData = { users: [], hashtags: [], places: [], posts: [], clips: [], related: [], suggests: [], tracks: [], serpLive: false, _blocked: false };
     renderIntoNative();
     return;
   }
@@ -917,24 +1102,62 @@ async function runSearch(q) {
   }
   renderSkeleton();
   try {
-    const data = await fetchTopSearch(q, signal);
+    // Real Instagram data first: blended topsearch + app SERP surfaces in
+    // parallel. Each SERP call is probe-and-fallback internally; a surface
+    // Instagram blocks just resolves null and legacy data carries the panel.
+    const [data, topSerp, accSerp, reelSerp, suggestSerp, audioSerp] = await Promise.all([
+      fetchTopSearch(q, signal).catch(() => null),
+      fetchTopSerp(q, signal).catch(() => null),
+      fetchAccountSerp(q, signal).catch(() => null),
+      fetchReelsSerp(q, signal).catch(() => null),
+      fetchKeywordSuggest(q, signal).catch(() => null),
+      fetchAudioSerp(q, signal).catch(() => null),
+    ]);
+    if (mySeq !== searchSeq || signal.aborted) return;
+    const legacyUsers = Array.isArray(data?.users) ? data.users : [];
+    const legacyTags = Array.isArray(data?.hashtags) ? data.hashtags : [];
+    const serpU = serpUsers(topSerp) .concat(serpUsers(accSerp));
+    const seenU = new Set();
+    const users = [];
+    for (const u of serpU.concat(legacyUsers)) {
+      const name = (u?.user?.username || "").toLowerCase();
+      if (!name || seenU.has(name)) continue;
+      seenU.add(name);
+      users.push(u);
+    }
+    const serpH = serpHashtags(topSerp);
+    const seenH = new Set();
+    const hashtags = [];
+    for (const h of serpH.concat(legacyTags)) {
+      const name = (h?.hashtag?.name || "").toLowerCase();
+      if (!name || seenH.has(name)) continue;
+      seenH.add(name);
+      hashtags.push(h);
+    }
+    // Real keyword POSTS from IG's own SERP media grids (not hashtag grids).
+    let posts = extractSerpMedia(topSerp, 12);
+    const serpReels = extractSerpMedia(reelSerp, 9);
+    const topTags = hashtags.slice(0, 3).map((h) => h.hashtag?.name).filter(Boolean);
+    let clips = serpReels.length ? serpReels.slice(0, 6) : [];
+    if (!clips.length && topTags.length && !signal.aborted) {
+      try { clips = await fetchSuggestedReels(topTags, signal); } catch {}
+    }
     if (mySeq !== searchSeq || signal.aborted) return;
     lastData = {
-      users: Array.isArray(data.users) ? data.users : [],
-      hashtags: Array.isArray(data.hashtags) ? data.hashtags : [],
-      places: Array.isArray(data.places) ? data.places : [],
-      clips: [],
-      related: [],
-      _blocked: false,
+      users, hashtags,
+      places: Array.isArray(data?.places) ? data.places : [],
+      posts, clips,
+      related: topTags,
+      suggests: collectSuggests(suggestSerp, q, 6),
+      tracks: extractTracks(audioSerp, 5),
+      serpLive: !!(topSerp || accSerp || reelSerp),
+      _blocked: !data && !topSerp && !accSerp,
     };
-    const topTags = lastData.hashtags.slice(0, 3).map((h) => h.hashtag?.name).filter(Boolean);
-    lastData.related = topTags;
-    if (topTags.length) lastData.clips = await fetchSuggestedReels(topTags, signal);
     cacheSet(q, lastData);
     saveRecent(q);
   } catch (err) {
     if (err?.name === "AbortError") return;
-    lastData = { users: [], hashtags: [], places: [], clips: [], related: [], _blocked: true };
+    lastData = { users: [], hashtags: [], places: [], posts: [], clips: [], related: [], suggests: [], tracks: [], serpLive: false, _blocked: true };
   }
   if (mySeq === searchSeq) renderIntoNative();
 }
@@ -1011,7 +1234,7 @@ function renderIntoNative() {
   } else if (activeTab === "foryou") {
     const places = placeRows(2);
     // Keyword-first: direct keyword links come before the #tag conversion.
-    html += aiCard(clean, noSpace, tagUrl, keywordUrl) + keywordDirectRows(clean, keywordUrl, tagUrl, noSpace) + reelsGrid(false, tagUrl, noSpace, keywordUrl, clean) + rowSection("Accounts", accountRows(3, noSpace)) + rowSection("Tags", tagRows(3, tagUrl, noSpace, false)) + (places ? rowSection("Places", places) : "");
+    html += aiCard(clean, noSpace, tagUrl, keywordUrl) + keywordDirectRows(clean, keywordUrl, tagUrl, noSpace) + postsGrid((lastData.posts || []).slice(0, 6), "Posts for these words") + reelsGrid(false, tagUrl, noSpace, keywordUrl, clean) + rowSection("Accounts", accountRows(3, noSpace)) + rowSection("Tags", tagRows(3, tagUrl, noSpace, false)) + (places ? rowSection("Places", places) : "");
   }
   else if (activeTab === "accounts") html += rowSection("Accounts", accountRows(8, noSpace));
   else if (activeTab === "reels") html += reelsGrid(true, tagUrl, noSpace, keywordUrl, clean) + relatedPills();
@@ -1154,11 +1377,22 @@ function tagRows(lim, tagUrl, noSpace, withFallback = true) {
 }
 
 function audioSection(clean, noSpace) {
-  // No public audio-search API on web — mirror mobile by surfacing reels
-  // (which carry the trending audio) + a direct audio-search link.
+  // Real IG audio results first (music/audio_global_search — same surface
+  // the app uses), reels + direct link as fallback. Tracks have no public
+  // playable URL on web, so rows link to the matching audio keyword search.
+  const tracks = Array.isArray(lastData.tracks) ? lastData.tracks : [];
   const audioUrl = "/explore/search/?q=" + encodeURIComponent((clean || "") + " audio");
-  return `<div class="inta-sec">Audio</div>`
-    + (lastData.clips?.length ? reelsGrid(true) : `<div class="inta-empty">No audio previews yet — try a link below.</div>`)
+  let html = `<div class="inta-sec">Audio</div>`;
+  if (tracks.length) {
+    html += tracks.map((t) =>
+      `<a class="inta-row" href="/explore/search/?q=${encodeURIComponent(((t.title || "") + " " + (t.artist || "")).trim() || clean)}">`
+      + `<span class="inta-ic">${ic("music", 20)}</span>`
+      + `<span class="inta-txt"><span class="inta-t1">${esc(t.title || "Audio")}</span>`
+      + `<span class="inta-t2">${esc([t.artist, t.duration].filter(Boolean).join(" · ") || "trending sound")}</span></span></a>`
+    ).join("");
+  }
+  return html
+    + (lastData.clips?.length ? reelsGrid(true) : (tracks.length ? "" : `<div class="inta-empty">No audio previews yet — try a link below.</div>`))
     + `<a class="inta-row" href="${audioUrl}"><span class="inta-ic">${ic("music", 20)}</span><span class="inta-txt"><span class="inta-t1">${esc(clean)} audio</span><span class="inta-t2">trending sounds for this search</span></span></a>`;
 }
 
@@ -1306,15 +1540,22 @@ function keywordSection(clean, noSpace, tagUrl, keywordUrl) {
   const extraUsers = strongUsers.length ? rankedUsers.filter((u) => !strongUsers.includes(u)).slice(0, 3) : [];
 
   // Single clear header with badge — no duplicate "Keyword" sections.
-  let html = `<div class="inta-sec">Keyword — “${esc(clean)}” <span class="inta-kw-badge">words, not #tag</span></div>`;
+  const liveBadge = lastData.serpLive ? `<span class="inta-kw-badge inta-live">live IG results</span>` : `<span class="inta-kw-badge">words, not #tag</span>`;
+  let html = `<div class="inta-sec">Keyword — “${esc(clean)}” ${liveBadge}</div>`;
   if (keywordUrl) {
     html += `<a class="inta-row inta-kw-main" href="${keywordUrl}"><span class="inta-ic">${ic("search", 20)}</span><span class="inta-txt"><span class="inta-t1">“${esc(clean)}” — keyword results</span><span class="inta-t2">posts, reels & accounts matching these words</span></span></a>`;
   }
-  // Token pills: one-tap refine to a single word (in-place search).
-  if (tokens.length > 1) {
+  // Real Instagram suggestions first, token split as fallback.
+  const suggests = Array.isArray(lastData.suggests) ? lastData.suggests : [];
+  if (suggests.length) {
+    html += `<div class="inta-pills">` + suggests.map((t) =>
+      `<button type="button" class="inta-pill" data-ask="${escAttr(t)}">${esc(t)}</button>`).join("") + `</div>`;
+  } else if (tokens.length > 1) {
     html += `<div class="inta-pills">` + tokens.map((t) =>
       `<button type="button" class="inta-pill" data-ask="${escAttr(t)}">${esc(t)}</button>`).join("") + `</div>`;
   }
+  // Real keyword POSTS from Instagram's SERP — the actual keyword output.
+  html += postsGrid((lastData.posts || []).slice(0, 6), "Posts for these words");
 
   const userRow = (u) => {
     const user = u.user || {};
@@ -1362,6 +1603,15 @@ function keywordSection(clean, noSpace, tagUrl, keywordUrl) {
     html += `<a class="inta-row" href="${keywordUrl}"><span class="inta-ic">${ic("play", 20)}</span><span class="inta-txt"><span class="inta-t1">See all keyword results</span><span class="inta-t2">instagram keyword search for “${esc(clean)}”</span></span></a>`;
   }
   return html;
+}
+
+function postsGrid(posts, title) {
+  // Real keyword posts (IG SERP media_grid): thumbnail grid linking to the
+  // actual post/reel — author shown under the overlay count when known.
+  if (!posts?.length) return "";
+  return `<div class="inta-sec">${esc(title || "Posts")}</div><div class="inta-reel-grid">` + posts.map((c) =>
+    `<a href="${c.link || ("/p/" + encodeURIComponent(c.code) + "/")}" class="inta-reel" title="${escAttr((c.author ? "@" + c.author + " — " : "") + (c.caption || ""))}"><img src="${escAttr(c.thumb)}" loading="lazy" referrerpolicy="no-referrer" draggable="false" alt="" /><span>${ic("play", 10)} ${fmt(c.likes)}</span></a>`
+  ).join("") + `</div>`;
 }
 
 function rowSection(title, inner) {

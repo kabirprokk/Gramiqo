@@ -265,7 +265,10 @@ button.inta-ask { cursor: pointer !important; font-family: inherit !important; }
   vertical-align: 1px !important;
   white-space: nowrap !important;
 }
-/* Keyword tab stands out as the default */
+.inta-kw-badge.inta-live {
+  border-color: rgba(0,200,100,.65) !important;
+  color: #00c864 !important;
+}
 #inta-tabs button[data-tab="keyword"].active {
   border-bottom-color: #0095F6 !important;
   color: #0095F6 !important;
