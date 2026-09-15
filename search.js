@@ -484,14 +484,18 @@ function syncActiveTab() {
   updateTabCounts();
 }
 
-// Advanced: live result counts in tab labels (accounts/tags only when known).
+// Advanced: live result counts in tab labels.
 function updateTabCounts() {
   try {
     const u = (lastData.users || []).length;
     const h = (lastData.hashtags || []).length;
     document.querySelectorAll("#inta-tabs button").forEach((b) => {
       const base = { keyword: "Keyword", foryou: "For you", accounts: "Accounts", reels: "Reels", audio: "Audio", tags: "Tags" }[b.dataset.tab] || b.dataset.tab;
-      if (b.dataset.tab === "accounts" && u > 0 && lastQuery) b.textContent = `${base} (${u > 8 ? "8+" : u})`;
+      if (b.dataset.tab === "keyword" && lastQuery) {
+        const n = u + h;
+        b.textContent = n > 0 ? `${base} (${n > 9 ? "9+" : n})` : base;
+      }
+      else if (b.dataset.tab === "accounts" && u > 0 && lastQuery) b.textContent = `${base} (${u > 8 ? "8+" : u})`;
       else if (b.dataset.tab === "tags" && h > 0 && lastQuery) b.textContent = `${base} (${h > 8 ? "8+" : h})`;
       else b.textContent = base;
     });
@@ -1094,28 +1098,42 @@ function relatedPills() {
 }
 
 function accountRows(lim, noSpace) {
-  const users = (lastData.users || []).slice(0, lim);
+  let users = Array.isArray(lastData.users) ? lastData.users : [];
+  // Powerful: every tab respects keyword ranking, not just the Keyword tab.
+  if (keywordFirst && lastQuery) {
+    users = rankByKeyword(users, (u) =>
+      ((u?.user?.username || "") + " " + (u?.user?.full_name || "")), lastQuery);
+  }
+  users = users.slice(0, lim);
   if (users.length) return users.map((u) => {
     const user = u.user || {};
     const name = user.username || "?";
+    const hit = (keywordFirst && lastQuery) ? keywordMatchInfo(((user.username || "") + " " + (user.full_name || "")), lastQuery) : null;
+    const badge = hit && hit.total > 1 ? `<span class="inta-hit">${hit.hits}/${hit.total} words</span>` : "";
     // Letter avatar only: CDN <img> is flaky on web (CORP blocks, see
     // console ERR_BLOCKED_BY_RESPONSE) and inline onerror violates IG's
     // CSP. Letters always render and never break the layout.
     return `<a class="inta-row" href="/${encodeURIComponent(user.username || "")}/">`
       + `<span class="inta-ic">${esc(name.charAt(0).toUpperCase())}</span>`
-      + `<span class="inta-txt"><span class="inta-t1">${esc(name)} ${user.is_verified ? '<span class="inta-verified">' + ic("check", 13) + "</span>" : ""}</span>`
+      + `<span class="inta-txt"><span class="inta-t1">${esc(name)} ${user.is_verified ? '<span class="inta-verified">' + ic("check", 13) + "</span>" : ""} ${badge}</span>`
       + `<span class="inta-t2">${esc(user.full_name || "")}</span></span></a>`;
   }).join("");
   return noSpace ? `<a class="inta-row" href="/${encodeURIComponent(noSpace)}/"><span class="inta-ic">${ic("user", 20)}</span><span class="inta-txt"><span class="inta-t1">@${esc(noSpace)}</span><span class="inta-t2">open profile directly</span></span></a>` : "";
 }
 
 function tagRows(lim, tagUrl, noSpace) {
-  const tags = (lastData.hashtags || []).slice(0, lim);
+  let tags = Array.isArray(lastData.hashtags) ? lastData.hashtags : [];
+  if (keywordFirst && lastQuery) {
+    tags = rankByKeyword(tags, (h) => (h?.hashtag?.name || ""), lastQuery);
+  }
+  tags = tags.slice(0, lim);
   let html = tags.length ? tags.map((h) => {
     const t = h.hashtag || {};
+    const hit = (keywordFirst && lastQuery) ? keywordMatchInfo((t.name || ""), lastQuery) : null;
+    const badge = hit && hit.total > 1 && hit.hits > 0 ? `<span class="inta-hit">${hit.hits}/${hit.total}</span>` : "";
     return `<a class="inta-row" href="/explore/tags/${encodeURIComponent(t.name || "")}/">`
       + `<span class="inta-ic">#</span>`
-      + `<span class="inta-txt"><span class="inta-t1">#${esc(t.name || "")}</span>`
+      + `<span class="inta-txt"><span class="inta-t1">#${esc(t.name || "")} ${badge}</span>`
       + `<span class="inta-t2">${Number(t.media_count || 0).toLocaleString()} posts</span></span></a>`;
   }).join("") : "";
   if (tagUrl) html += `<a class="inta-row" href="${tagUrl}"><span class="inta-ic">${ic("external", 18)}</span><span class="inta-txt"><span class="inta-t1">#${esc(noSpace)}</span><span class="inta-t2">photos + reels grid</span></span></a>`;
@@ -1155,33 +1173,93 @@ function placeRows(lim) {
    - direct keyword rows link to /explore/search/?q=<words> (IG keyword page)
    - live users/tags/places are re-ranked by keyword-token match, not by
      who has the closest hashtag name
-   - the #tag grid stays available, but as a secondary row / Tags tab. */
+   - the #tag grid stays available, but as a secondary row / Tags tab.
+   Powerful v2: unicode-normalized tokens, full-phrase + word-boundary
+   bonuses, per-row hits (2/2 words), strong-vs-partial partitioning,
+   tie-break by followers/media_count, token pills for one-tap refine. */
+
+function normalizeKeyword(s) {
+  try {
+    return String(s || "").toLowerCase().normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[_\-.]+/g, " ")
+      .replace(/[^a-z0-9\u00c0-\u024f\u1e00-\u1eff\s]/g, " ")
+      .replace(/\s+/g, " ").trim();
+  } catch { return String(s || "").toLowerCase().trim(); }
+}
 
 function keywordTokens(clean) {
-  return String(clean || "").toLowerCase().split(/[\s_]+/).map((t) => t.trim()).filter((t) => t.length >= 2);
+  const norm = normalizeKeyword(clean).replace(/^[@#]/, "").trim();
+  const parts = norm.split(" ").map((t) => t.trim()).filter(Boolean);
+  const out = [];
+  for (const t of parts) {
+    if (t.length >= 2 && !out.includes(t)) out.push(t);
+    if (out.length >= 5) break;
+  }
+  // Single meaningful char (e.g. CJK) still searchable.
+  if (!out.length && parts.length) return parts.slice(0, 3);
+  return out;
+}
+
+function keywordMatchInfo(hay, clean) {
+  try {
+    const tokens = keywordTokens(clean);
+    if (!tokens.length) return { score: 0, hits: 0, total: 0 };
+    const normHay = " " + normalizeKeyword(hay).replace(/[^a-z0-9\u00c0-\u024f\u1e00-\u1eff\s]/g, "") + " ";
+    const flatHay = normalizeKeyword(hay).replace(/\s+/g, "");
+    const normFull = normalizeKeyword(clean);
+    let score = 0, hits = 0;
+    for (const t of tokens) {
+      if (normHay.includes(" " + t + " ")) { score += 12; hits++; continue; }
+      if (normHay.includes(" " + t)) { score += 7; hits++; continue; }
+      if (normHay.includes(t)) { score += 4; hits++; continue; }
+      if (flatHay.includes(t)) { score += 2; hits++; continue; }
+    }
+    if (tokens.length > 1 && normHay.includes(normFull)) score += 10;
+    else if (tokens.length === 1 && normHay.includes(" " + normFull + " ")) score += 6;
+    return { score, hits, total: tokens.length };
+  } catch { return { score: 0, hits: 0, total: 0 }; }
 }
 
 function keywordScore(hay, tokens) {
   try {
-    const h = String(hay || "").toLowerCase();
-    if (!h || !tokens.length) return 0;
+    const h = " " + normalizeKeyword(hay) + " ";
+    const flat = normalizeKeyword(hay).replace(/\s+/g, "");
+    if (!h.trim() || !tokens.length) return 0;
     let score = 0;
     for (const t of tokens) {
       if (!t) continue;
-      if (h === t) score += 10;
-      else if (h.startsWith(t)) score += 6;
-      else if (h.includes(t)) score += 3;
+      if (h.includes(" " + t + " ")) score += 12;
+      else if (h.includes(" " + t)) score += 7;
+      else if (h.includes(t)) score += 4;
+      else if (flat.includes(t)) score += 2;
     }
     return score;
   } catch { return 0; }
 }
 
+function rankWeight(item) {
+  try {
+    const u = item?.user;
+    if (u) return Number(u.follower_count || u.followers || 0) || 0;
+    const t = item?.hashtag;
+    if (t) return Number(t.media_count || 0) || 0;
+  } catch {}
+  return 0;
+}
+
 function rankByKeyword(list, getText, clean) {
   try {
     const tokens = keywordTokens(clean);
-    if (!tokens.length) return list;
-    return [...list].sort((a, b) =>
-      keywordScore(getText(b), tokens) - keywordScore(getText(a), tokens));
+    if (!tokens.length) return [...list];
+    return [...list]
+      .map((item, idx) => ({ item, idx, info: keywordMatchInfo(getText(item), clean), w: rankWeight(item) }))
+      .sort((a, b) =>
+        (b.info.hits - a.info.hits) ||
+        (b.info.score - a.info.score) ||
+        (b.w - a.w) ||
+        (a.idx - b.idx))
+      .map((x) => x.item);
   } catch { return list; }
 }
 
@@ -1202,32 +1280,56 @@ function keywordDirectRows(clean, keywordUrl, tagUrl, noSpace) {
 
 function keywordSection(clean, noSpace, tagUrl, keywordUrl) {
   const tokens = keywordTokens(clean);
-  const users = rankByKeyword(lastData.users || [], (u) =>
-    ((u?.user?.username || "") + " " + (u?.user?.full_name || "")), clean).slice(0, 5);
-  const tags = rankByKeyword(lastData.hashtags || [], (h) => (h?.hashtag?.name || ""), clean).slice(0, 5);
+  const rankedUsers = rankByKeyword(lastData.users || [], (u) =>
+    ((u?.user?.username || "") + " " + (u?.user?.full_name || "")), clean);
+  const rankedTags = rankByKeyword(lastData.hashtags || [], (h) => (h?.hashtag?.name || ""), clean);
+
+  // Partition: full-phrase winners first, partial below — never hide all.
+  const strongUsers = rankedUsers.filter((u) => {
+    const i = keywordMatchInfo(((u?.user?.username || "") + " " + (u?.user?.full_name || "")), clean);
+    return i.total > 0 && i.hits >= i.total;
+  });
+  const shownUsers = (strongUsers.length ? strongUsers : rankedUsers).slice(0, 5);
+  const extraUsers = strongUsers.length ? rankedUsers.filter((u) => !strongUsers.includes(u)).slice(0, 3) : [];
 
   // Single clear header with badge — no duplicate "Keyword" sections.
   let html = `<div class="inta-sec">Keyword — “${esc(clean)}” <span class="inta-kw-badge">words, not #tag</span></div>`;
   if (keywordUrl) {
     html += `<a class="inta-row inta-kw-main" href="${keywordUrl}"><span class="inta-ic">${ic("search", 20)}</span><span class="inta-txt"><span class="inta-t1">“${esc(clean)}” — keyword results</span><span class="inta-t2">posts, reels & accounts matching these words</span></span></a>`;
   }
+  // Token pills: one-tap refine to a single word (in-place search).
+  if (tokens.length > 1) {
+    html += `<div class="inta-pills">` + tokens.map((t) =>
+      `<button type="button" class="inta-pill" data-ask="${escAttr(t)}">${esc(t)}</button>`).join("") + `</div>`;
+  }
 
-  const userHtml = users.length ? users.map((u) => {
+  const userRow = (u) => {
     const user = u.user || {};
     const name = user.username || "?";
+    const info = keywordMatchInfo(((user.username || "") + " " + (user.full_name || "")), clean);
+    const badge = info.total > 1 ? `<span class="inta-hit">${info.hits}/${info.total} words</span>` : "";
     return `<a class="inta-row" href="/${encodeURIComponent(user.username || "")}/">`
       + `<span class="inta-ic">${esc(name.charAt(0).toUpperCase())}</span>`
-      + `<span class="inta-txt"><span class="inta-t1">${esc(name)} ${user.is_verified ? '<span class="inta-verified">' + ic("check", 13) + "</span>" : ""}</span>`
+      + `<span class="inta-txt"><span class="inta-t1">${esc(name)} ${user.is_verified ? '<span class="inta-verified">' + ic("check", 13) + "</span>" : ""} ${badge}</span>`
       + `<span class="inta-t2">${esc(user.full_name || "")}</span></span></a>`;
-  }).join("") : `<div class="inta-empty">No account contains all of “${esc(clean)}” — try fewer words.</div>`;
-  html += rowSection(tokens.length > 1 ? "Accounts matching these words" : "Accounts", userHtml);
+  };
+  const userHtml = shownUsers.length ? shownUsers.map(userRow).join("")
+    : `<div class="inta-empty">No account matches “${esc(clean)}” yet — try fewer words or one token above.</div>`;
+  html += rowSection(
+    tokens.length > 1
+      ? (strongUsers.length ? `Best matches (${strongUsers.length} full)` : "Accounts matching these words")
+      : "Accounts",
+    userHtml);
+  if (extraUsers.length) html += rowSection("Also found", extraUsers.map(userRow).join(""));
 
-  if (tags.length) {
-    html += rowSection("Tags containing these words", tags.map((h) => {
+  if (rankedTags.length) {
+    html += rowSection("Tags containing these words", rankedTags.slice(0, 5).map((h) => {
       const t = h.hashtag || {};
+      const info = keywordMatchInfo((t.name || ""), clean);
+      const badge = info.total > 1 && info.hits > 0 ? `<span class="inta-hit">${info.hits}/${info.total}</span>` : "";
       return `<a class="inta-row" href="/explore/tags/${encodeURIComponent(t.name || "")}/">`
         + `<span class="inta-ic">#</span>`
-        + `<span class="inta-txt"><span class="inta-t1">#${esc(t.name || "")}</span>`
+        + `<span class="inta-txt"><span class="inta-t1">#${esc(t.name || "")} ${badge}</span>`
         + `<span class="inta-t2">${Number(t.media_count || 0).toLocaleString()} posts</span></span></a>`;
     }).join(""));
   }
@@ -1237,7 +1339,9 @@ function keywordSection(clean, noSpace, tagUrl, keywordUrl) {
   const placeHtml = placeRows(3);
   if (placeHtml) html += rowSection("Places", placeHtml);
   if (lastData.clips?.length) {
-    html += `<div class="inta-sec">Reels for these words</div><div class="inta-reel-grid">` + lastData.clips.slice(0, 6).map((c) =>
+    const rankedClips = [...lastData.clips].sort((a, b) =>
+      keywordMatchInfo((b.tag || ""), clean).score - keywordMatchInfo((a.tag || ""), clean).score);
+    html += `<div class="inta-sec">Reels for these words</div><div class="inta-reel-grid">` + rankedClips.slice(0, 6).map((c) =>
       `<a href="/reel/${encodeURIComponent(c.code)}/" class="inta-reel" title="${escAttr(clean)}"><img src="${escAttr(c.thumb)}" loading="lazy" referrerpolicy="no-referrer" draggable="false" alt="" /><span>${ic("play", 10)} ${fmt(c.likes)}</span></a>`
     ).join("") + `</div>`;
   }

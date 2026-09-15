@@ -253,6 +253,18 @@ button.inta-ask { cursor: pointer !important; font-family: inherit !important; }
   border: 1px solid rgba(0,149,246,.45) !important;
   border-radius: 10px !important;
 }
+.inta-hit {
+  display: inline-block !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  border: 1px solid rgba(0,149,246,.55) !important;
+  color: #0095F6 !important;
+  border-radius: 20px !important;
+  padding: 0 7px !important;
+  margin-left: 6px !important;
+  vertical-align: 1px !important;
+  white-space: nowrap !important;
+}
 /* Keyword tab stands out as the default */
 #inta-tabs button[data-tab="keyword"].active {
   border-bottom-color: #0095F6 !important;
