@@ -38,7 +38,7 @@ let searchSeq = 0;
 // One-click diagnostics: every network surface records its outcome here
 // (surface, HTTP/error, ms, result size). Popup "Copy diagnostics" sends
 // INTA_GET_DIAG and pastes this — no DevTools needed to debug search.
-const INTA_VER = "1.2.0 (OLIN 1.2.a)";
+const INTA_VER = "1.2.1 (OLIN 1.2.b)";
 const diagFetches = [];
 function diagRec(surface, ok, info) {
   try {
@@ -554,10 +554,14 @@ function updateTabCounts() {
 
 function onType(e) {
   clearTimeout(debounce);
-  const v = (e.target.value || "").trim();
+  const input = e.target;
+  const v = (input.value || "").trim();
+  // Mobile-instant: paint "Searching…" on THIS keystroke, fetch 220ms later.
+  if (v !== lastQuery) renderSkeleton();
   debounce = setTimeout(() => {
-    if (v !== lastQuery) runSearch(v);
-  }, 450);
+    const now = (input.value || "").trim();
+    if (now !== lastQuery) runSearch(now);
+  }, 220);
 }
 function onEnter(e) {
   // Search in place: never let Enter fall through to Instagram's own
@@ -1342,10 +1346,9 @@ async function fetchSuggestedReels(tagNames, signal) {
 
 async function runSearch(q) {
   lastQuery = q;
-  // Keyword-first: every NEW query opens on the Keyword tab (the requested
-  // behavior: "search gives keyword output instead of hashtag output").
-  // Clicking another tab after that still sticks until the next query.
-  if (q && keywordFirst && activeTab !== "keyword") {
+  // Keyword is the default view: new queries open on it — but never yank
+  // the user out of Accounts/Reels/Audio/Tags they explicitly chose.
+  if (q && keywordFirst && (activeTab === "foryou" || activeTab === "tags")) {
     activeTab = "keyword";
     try { syncActiveTab(); } catch {}
   }

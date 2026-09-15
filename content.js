@@ -179,9 +179,7 @@ function scheduleEnhance(delay = 900) {
 
 function enhanceAll() {
   if (location.hostname !== "www.instagram.com" && !location.hostname.endsWith(".instagram.com")) return;
-  addDownloadButtonsToPosts();
-  addMp3ButtonsToPosts();
-  addCopyButtonsToPosts();
+  addMenuToPosts();
   enhanceReelsPage();
   enhanceProfilePage();
   enhanceEditPage();
@@ -359,6 +357,7 @@ function hdUpgrade(url) {
 
 function downloadUrl(url, filename) {
   if (!url) return toast("No media found");
+  toast("Downloading…"); // instant feedback — the wait popup, before any work
   if (url.startsWith("blob:")) {
     fetch(url)
       .then((r) => {
@@ -380,12 +379,8 @@ function downloadUrl(url, filename) {
   }
   try {
     chrome.runtime.sendMessage({ type: "INTA_DOWNLOAD", url, filename }, (res) => {
-      if (chrome.runtime.lastError) {
-        toast("Download blocked — right-click > Save");
-        return;
-      }
-      if (res?.ok) toast("Downloading…");
-      else toast("Download blocked — right-click > Save");
+      if (chrome.runtime.lastError || !res?.ok) toast("Download blocked — right-click > Save");
+      // Success was already announced instantly below — stay quiet.
     });
   } catch {
     toast("Download unavailable here");
@@ -401,12 +396,69 @@ function downloadVisibleMedia() {
 }
 
 /* ---------------- MP3 audio (320kbps, on-device, no server) ----------------
-   The button sits directly under Download on videos. No fetching, no
-   demuxing, no container decoding (all of which Instagram's CDN/files
-   defeated): we tap the PLAYING <video> element itself — Web Audio
-   source node → PCM capture → lamejs 320k MP3 → anchor download.
-   Whatever you hear is what gets saved, in one realtime pass. */
+   FAST PATH (new): fetch the video file itself → native decode →
+   OfflineAudioContext render at full CPU speed → lamejs 320k MP3.
+   Seconds, not realtime — no playback, tab can even be backgrounded.
+   FALLBACK (old): tap the playing <video> and capture one realtime pass
+   (blob: URLs, protected streams). Whatever you hear is what gets saved. */
 async function downloadMp3FromElement(video) {
+  if (!settings.downloadBtn) return toast("Enable Download in popup first");
+  if (!video) return toast("Video still loading — wait a second");
+  if (!window.lamejs?.Mp3Encoder) return toast("Audio engine missing — reload the extension");
+  toast("Preparing MP3…"); // instant feedback — the wait popup
+  const url = video.currentSrc || video.src || "";
+  if (url && /^https?:\/\//.test(url)) {
+    try {
+      await downloadMp3Fast(url);
+      return;
+    } catch (e) {
+      console.warn("[Inta-Enhancer] fast mp3 failed, realtime fallback", e);
+    }
+  }
+  await downloadMp3Realtime(video);
+}
+
+async function downloadMp3Fast(url) {
+  const res = await fetch(url, { credentials: "include" });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const raw = await res.arrayBuffer();
+  if (!raw || !raw.byteLength) throw new Error("empty-file");
+  const AC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  if (!AC) throw new Error("no-offline");
+  const scratch = new AC(1, 44100, 44100);
+  const decoded = await new Promise((resolve, reject) => {
+    try {
+      const p = scratch.decodeAudioData(raw.slice(0), resolve, reject);
+      if (p && typeof p.then === "function") p.then(resolve, reject);
+    } catch (e) {
+      reject(e);
+    }
+  });
+  const dur = Math.min(Number(decoded.duration) || 0, 600);
+  if (!dur || !isFinite(dur) || dur < 0.5) throw new Error("no-duration");
+  const rate = 44100;
+  const off = new AC(decoded.numberOfChannels >= 2 ? 2 : 1, Math.ceil(dur * rate), rate);
+  const src = off.createBufferSource();
+  src.buffer = decoded;
+  src.connect(off.destination);
+  try { src.start(0, 0, dur); } catch { try { src.start(0); } catch {} }
+  const rendered = await off.startRendering();
+  const L = rendered.getChannelData(0);
+  const R = rendered.numberOfChannels > 1 ? rendered.getChannelData(1) : L;
+  const parts = encodePcm(rate, L, R);
+  if (!parts.length) throw new Error("encode-empty");
+  const blob = new Blob(parts, { type: "audio/mpeg" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `insta-audio-${Date.now()}.mp3`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 15000);
+  toast("Audio saved!");
+}
+
+async function downloadMp3Realtime(video) {
   if (!settings.downloadBtn) return toast("Enable Download in popup first");
   if (!video) return toast("Video still loading — wait a second");
   if (video.dataset.intaCaptured) return toast("Reload the page for another capture");
@@ -573,61 +625,138 @@ function articleMedia(article) {
   return null;
 }
 
-function addDownloadButtonsToPosts() {
-  if (!settings.downloadBtn) return;
+function addMenuToPosts() {
+  bindMenuDismiss();
   document.querySelectorAll("article").forEach((article) => {
-    if (article.querySelector(":scope > .inta-dl")) return;
+    if (article.querySelector(":scope > .inta-menu-wrap")) return;
+    // Upgrade path: remove legacy single buttons.
+    article.querySelectorAll(":scope > .inta-dl, :scope > .inta-mp3, :scope > .inta-copy").forEach((b) => { try { b.remove(); } catch {} });
     try {
-      const cs = getComputedStyle(article);
-      if (cs.position === "static") article.style.position = "relative";
+      if (getComputedStyle(article).position === "static") article.style.position = "relative";
     } catch {}
+    const wrap = document.createElement("div");
+    wrap.className = "inta-menu-wrap";
     const btn = document.createElement("button");
-    btn.className = "inta-dl";
+    btn.className = "inta-menu";
     btn.type = "button";
-    btn.innerHTML = ic("download", 18);
-    btn.title = "Download this post (Inta-Enhancer)";
-    btn.setAttribute("aria-label", "Download post");
+    btn.textContent = "•••";
+    btn.title = "Post actions (Inta-Enhancer)";
+    btn.setAttribute("aria-label", "Post actions");
+    const pop = document.createElement("div");
+    pop.className = "inta-menu-pop";
+    pop.setAttribute("role", "menu");
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const media = articleMedia(article);
-      if (!media) return toast("No media found in this post");
-      const ext = media.type === "video" ? "mp4" : "jpg";
-      downloadUrl(media.url, `insta-${media.type}-${Date.now()}.${ext}`);
+      const was = pop.classList.contains("open");
+      closeAllMenus(null);
+      if (!was) pop.classList.add("open");
     });
-    article.appendChild(btn);
+    if (settings.downloadBtn) {
+      pop.appendChild(menuRow("download", "Download", () => {
+        const media = articleMedia(article);
+        if (!media) return toast("No media found in this post");
+        const ext = media.type === "video" ? "mp4" : "jpg";
+        downloadUrl(media.url, `insta-${media.type}-${Date.now()}.${ext}`);
+      }));
+      if (article.querySelector("video")) {
+        pop.appendChild(menuRow("music", "Audio MP3", () => {
+          const v = article.querySelector("video");
+          if (!v) return toast("Video still loading — wait a second");
+          downloadMp3FromElement(v);
+        }));
+      }
+    }
+    if (settings.copyCaption) {
+      pop.appendChild(menuRow("copy", "Copy caption", () => {
+        const t = articleCaption(article);
+        if (!t) return toast("No caption found");
+        copyText(t, "Caption copied!");
+      }));
+    }
+    if (settings.hashtagTools) {
+      pop.appendChild(menuRow("hash", "Copy hashtags", () => {
+        const tags = articleHashtags(article);
+        if (!tags.length) return toast("No hashtags here");
+        copyText(tags.join(" "), `${tags.length} hashtags copied!`);
+      }));
+    }
+    pop.appendChild(menuRow("link", "Copy link", () => {
+      const href = articleLink(article);
+      if (!href) return toast("No link found here");
+      copyText(href, "Post link copied!");
+    }));
+    wrap.appendChild(btn);
+    wrap.appendChild(pop);
+    article.appendChild(wrap);
   });
 }
 
-// MP3 sits directly under Download on EVERY post — same technique as the
-// MP4 button: always injected, media resolved at click time.
-function addMp3ButtonsToPosts() {
-  if (!settings.downloadBtn) return;
-  document.querySelectorAll("article").forEach((article) => {
-    if (article.querySelector(":scope > .inta-mp3")) return;
-    try {
-      const cs = getComputedStyle(article);
-      if (cs.position === "static") article.style.position = "relative";
-    } catch {}
-    const btn = document.createElement("button");
-    btn.className = "inta-mp3";
-    btn.type = "button";
-    btn.innerHTML = ic("music", 17);
-    btn.title = "Download audio as MP3 (320kbps)";
-    btn.setAttribute("aria-label", "Download audio as MP3");
-    btn.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const media = articleMedia(article);
-      if (!media) return toast("No media found in this post");
-      if (media.type !== "video") return toast("This post has no audio");
-      const v = article.querySelector("video");
-      if (!v) return toast("Video still loading — wait a second");
-      downloadMp3FromElement(v);
+/* ---------------- one menu per post (super-simple UI) ----------------
+   A single ⋯ button on each article; every action lives in its dropdown:
+   Download, Audio MP3, Copy caption, Copy hashtags, Copy link.
+   PC look (adapts to IG light/dark via system colors), mobile system
+   underneath. Legacy single buttons are removed on sight (upgrade path). */
+let menuDocBound = false;
+function closeAllMenus(except) {
+  try {
+    document.querySelectorAll(".inta-menu-pop.open").forEach((p) => {
+      if (p !== except) p.classList.remove("open");
     });
-    article.appendChild(btn);
-  });
+  } catch {}
 }
+function bindMenuDismiss() {
+  if (menuDocBound) return;
+  menuDocBound = true;
+  document.addEventListener("click", (e) => {
+    try {
+      if (!e.target?.closest?.(".inta-menu-wrap")) closeAllMenus(null);
+    } catch {}
+  }, true);
+  document.addEventListener("keydown", (e) => {
+    try { if (e.key === "Escape") closeAllMenus(null); } catch {}
+  }, true);
+}
+function articleCaption(article) {
+  try {
+    const texts = [...article.querySelectorAll("span, div[dir='auto']")]
+      .map((el) => (el.innerText || "").trim())
+      .filter((t) => t.length > 20 && t.includes(" "));
+    texts.sort((a, b) => b.length - a.length);
+    return texts[0] || "";
+  } catch { return ""; }
+}
+function articleHashtags(article) {
+  try {
+    const found = (article.innerText || "").match(/#[\p{L}\p{N}_]+/gu);
+    return found ? [...new Set(found)] : [];
+  } catch { return []; }
+}
+function articleLink(article) {
+  try {
+    const a = article.querySelector('a[href^="/p/"], a[href^="/reel/"], a[href*="/p/"], a[href*="/reel/"]');
+    const href = a?.getAttribute("href") || "";
+    if (!href) return "";
+    return href.startsWith("http") ? href : "https://www.instagram.com" + href;
+  } catch { return ""; }
+}
+function menuRow(icon, label, fn) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "inta-menu-row";
+  b.innerHTML = ic(icon, 15) + "<span></span>";
+  b.lastChild.textContent = label;
+  b.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try { closeAllMenus(null); } catch {}
+    try { fn(); } catch {}
+  });
+  return b;
+}
+
+// Legacy single-button builders removed: addMenuToPosts() owns articles now
+// (one ⋯ menu per post). Kept as no-ops in case any older tick calls them.
 
 /* ---------------- copy caption ---------------- */
 
@@ -678,34 +807,6 @@ function fallbackCopy(text, okMsg) {
   } catch {
     toast("Copy failed");
   }
-}
-
-function addCopyButtonsToPosts() {
-  if (!settings.copyCaption) return;
-  document.querySelectorAll("article").forEach((article) => {
-    if (article.querySelector(":scope > .inta-copy")) return;
-    try {
-      if (getComputedStyle(article).position === "static")
-        article.style.position = "relative";
-    } catch {}
-    const btn = document.createElement("button");
-    btn.className = "inta-copy";
-    btn.type = "button";
-    btn.innerHTML = ic("copy", 18);
-    btn.title = "Copy caption (Inta-Enhancer)";
-    btn.setAttribute("aria-label", "Copy caption");
-    btn.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const texts = [...article.querySelectorAll("span, div[dir='auto']")]
-        .map((el) => (el.innerText || "").trim())
-        .filter((t) => t.length > 20 && t.includes(" "));
-      texts.sort((a, b) => b.length - a.length);
-      if (!texts[0]) return toast("No caption found");
-      copyText(texts[0], "Caption copied!");
-    });
-    article.appendChild(btn);
-  });
 }
 
 /* ---------------- HD profile pic + modal ---------------- */

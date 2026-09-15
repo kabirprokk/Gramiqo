@@ -493,6 +493,7 @@ function bulkSave(e) {
 function hashtagTick() {
   document.querySelectorAll("article").forEach((a) => {
     if (a.querySelector(":scope > .inta-tags")) return;
+    if (a.querySelector(":scope > .inta-menu-wrap")) return; // menu owns it
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "inta-tags";
@@ -731,6 +732,7 @@ function centerStageTick() {
 function linkTick() {
   document.querySelectorAll("article").forEach((a) => {
     if (a.querySelector(":scope > .inta-linkcopy")) return;
+    if (a.querySelector(":scope > .inta-menu-wrap")) return; // menu owns it
     const anchor = a.querySelector('a[href^="/p/"], a[href^="/reel/"], a[href*="/p/"], a[href*="/reel/"]');
     if (!anchor) return;
     const btn = document.createElement("button");

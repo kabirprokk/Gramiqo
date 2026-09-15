@@ -14,6 +14,42 @@
 .inta-links-add { display: inline-flex !important; align-items: center !important; justify-content: center !important; gap: 6px !important; }
 .inta-links-add .inta-ic-svg { width: 14px !important; height: 14px !important; }
 
+/* One ⋯ menu per post (super-simple UI): single button, dropdown rows.
+   System colors adapt to IG light/dark automatically — PC look kept. */
+.inta-menu-wrap { position: absolute !important; top: 10px !important; right: 10px !important; z-index: 50000 !important; }
+.inta-menu {
+  width: 36px !important; height: 36px !important;
+  border-radius: 50% !important; border: none !important;
+  background: rgba(0,0,0,.7) !important; color: #fff !important;
+  font-size: 15px !important; font-weight: 800 !important; letter-spacing: 1px !important;
+  cursor: pointer !important; line-height: 1 !important;
+  display: flex !important; align-items: center !important; justify-content: center !important;
+  padding: 0 0 4px 1px !important;
+}
+.inta-menu:hover { background: #0095F6 !important; }
+.inta-menu-pop {
+  display: none !important;
+  position: absolute !important; top: 42px !important; right: 0 !important;
+  min-width: 178px !important;
+  background: Canvas !important; color: CanvasText !important;
+  border: 1px solid ButtonBorder !important; border-radius: 12px !important;
+  box-shadow: 0 8px 28px rgba(0,0,0,.28) !important;
+  padding: 6px !important; z-index: 50001 !important;
+}
+.inta-menu-pop.open { display: block !important; }
+.inta-menu-row {
+  display: flex !important; align-items: center !important; gap: 10px !important;
+  width: 100% !important; box-sizing: border-box !important;
+  border: none !important; background: transparent !important; color: inherit !important;
+  font-size: 13px !important; font-weight: 600 !important; font-family: inherit !important;
+  padding: 9px 10px !important; border-radius: 8px !important;
+  cursor: pointer !important; text-align: left !important; white-space: nowrap !important;
+}
+.inta-menu-row:hover { background: rgba(128,128,128,.18) !important; }
+.inta-menu-row .inta-ic-svg { width: 15px !important; height: 15px !important; }
+div[role="dialog"] .inta-menu-wrap { left: 10px !important; right: auto !important; }
+div[role="dialog"] .inta-menu-pop { left: 0 !important; right: auto !important; }
+
 /* per-post buttons (stack: download 10 / copy 54 / tags live in power.css) */
 .inta-dl, .inta-copy, .inta-reel-dl, .inta-mp3, .inta-reel-mp3 {
   position: absolute !important;
