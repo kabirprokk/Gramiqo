@@ -1,6 +1,6 @@
 // popup.js - controls the ON/OFF switches, saved in chrome.storage
 const DEFAULTS = {
-  mobileMode: true, // ON: Instagram feels like mobile (UA + narrow frame)
+  mobileMode: false, // OFF: desktop Instagram renders correctly; opt-in for iPhone feel
   profileTools: true,
   enhancedSearch: true,
   keywordSearch: true,

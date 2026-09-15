@@ -95,7 +95,7 @@ function guessExt(url) {
 // modification, the UA rule still stands.
 async function applyMobileMode() {
   try {
-    const { mobileMode } = await chrome.storage.sync.get({ mobileMode: true });
+    const { mobileMode } = await chrome.storage.sync.get({ mobileMode: false });
     const on = !!mobileMode;
     if (chrome.declarativeNetRequest?.updateDynamicRules) {
       if (on) {

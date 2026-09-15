@@ -23,7 +23,7 @@ const DEFAULTS = {
   darkMode: false,
   wideFeed: false,
   enhancedSearch: true, // owned by search.js
-  mobileMode: true,     // ON: UA spoof (background) + mobile frame (below)
+  mobileMode: false,    // OFF by default: desktop bundle renders correctly; opt-in for iPhone feel
   profileTools: true,   // mobile-like profile + edit helpers + nav link
   // power.js owns these (listed here so storage sync stays compatible)
   storySaver: true,

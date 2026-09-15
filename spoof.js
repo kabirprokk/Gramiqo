@@ -73,20 +73,9 @@ try {
   });
 } catch {}
 
-// iPhone Safari has NO window.chrome / window.browser (those are
-// Chromium/Firefox globals). Leaving them present next to an iPhone UA
-// is a classic spoof tell, so remove them. Guarded: if anything is
-// non-configurable we just keep it — a missed strip beats a broken page.
-try {
-  const c = Object.getOwnPropertyDescriptor(window, "chrome");
-  if (!c || c.configurable) {
-    try { delete window.chrome; } catch {}
-  }
-} catch {}
-try {
-  const b = Object.getOwnPropertyDescriptor(window, "browser");
-  if (b && b.configurable) {
-    try { delete window.browser; } catch {}
-  }
-} catch {}
+// NOTE (blank-page fix): do NOT delete window.chrome / window.browser.
+// Instagram's desktop bundle (served to real desktop Chrome) can depend on
+// these globals; removing them while on a desktop engine was blanking the
+// page for some users. A spoof "tell" is harmless — a black page is not.
+try {} catch {}
 })();
