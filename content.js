@@ -652,6 +652,7 @@ function addMenuToPosts() {
     btn.textContent = "•••";
     btn.title = "Post actions (Inta-Enhancer)";
     btn.setAttribute("aria-label", "Post actions");
+    swallowToggle(btn);
     const pop = document.createElement("div");
     pop.className = "inta-menu-pop";
     pop.setAttribute("role", "menu");
@@ -756,6 +757,7 @@ function menuRow(icon, label, fn) {
   b.className = "inta-menu-row";
   b.innerHTML = ic(icon, 15) + "<span></span>";
   b.lastChild.textContent = label;
+  swallowToggle(b);
   b.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -763,6 +765,19 @@ function menuRow(icon, label, fn) {
     try { fn(); } catch {}
   });
   return b;
+}
+// Instagram toggles video play on pointerdown/mousedown of the container —
+// a bubble-phase click stop is NOT enough when the video layer paints over
+// us. Swallow the whole gesture family on our controls so taps can never
+// leak through to the video underneath.
+function swallowToggle(el) {
+  try {
+    for (const t of ["pointerdown", "mousedown", "touchstart"]) {
+      el.addEventListener(t, (e) => {
+        try { e.stopPropagation(); } catch {}
+      }, true);
+    }
+  } catch {}
 }
 
 // Legacy single-button builders removed: addMenuToPosts() owns articles now
@@ -1502,7 +1517,8 @@ function enhanceTopSearch() {
 
 function enhanceReelsPage() {
   if (!settings.downloadBtn) return;
-  // Any video in main gets a download badge (reels, posts, explore).
+  // Reels-viewer videos live outside <article>s — same ⋯ menu, anchored to
+  // the video holder. Articles keep their own menu (never double up).
   document.querySelectorAll("main video").forEach((video) => {
     const holder =
       video.closest("div:has(> video)") || video.parentElement || video;
@@ -1511,41 +1527,50 @@ function enhanceReelsPage() {
       if (getComputedStyle(holder).position === "static")
         holder.style.position = "relative";
     } catch {}
+    // Upgrade path: remove legacy single badges.
+    try {
+      holder.querySelectorAll?.(":scope > .inta-reel-dl, :scope > .inta-reel-mp3").forEach((b) => b.remove());
+    } catch {}
+    if (holder.querySelector?.(":scope > .inta-menu-wrap")) return;
+    try {
+      if (holder.closest("article")?.querySelector(":scope > .inta-menu-wrap")) return;
+    } catch {}
     // Left-docked: IG's like/comment rail lives on the media's right edge
-    // (reels viewer) — our badges sit top-left where nothing overlaps.
+    // (reels viewer) — our menu sits top-left where nothing overlaps.
     try { holder.classList.add("inta-lefty"); } catch {}
-    if (!holder.querySelector?.(":scope > .inta-reel-dl")) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "inta-reel-dl";
-      btn.innerHTML = ic("download", 18);
-      btn.title = "Download this reel (Inta-Enhancer)";
-      btn.setAttribute("aria-label", "Download reel");
-      btn.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const url =
-          video.currentSrc || video.src || video.querySelector("source")?.src || "";
-        if (!url) return toast("Video still loading — wait a second");
-        downloadUrl(url, `insta-reel-${Date.now()}.mp4`);
-      });
-      holder.appendChild(btn);
-    }
-    // MP3 directly under the reel download badge.
-    if (!holder.querySelector?.(":scope > .inta-reel-mp3")) {
-      const mp3 = document.createElement("button");
-      mp3.type = "button";
-      mp3.className = "inta-reel-mp3";
-      mp3.innerHTML = ic("music", 16);
-      mp3.title = "Download audio as MP3 (320kbps)";
-      mp3.setAttribute("aria-label", "Download audio as MP3");
-      mp3.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        downloadMp3FromElement(video);
-      });
-      holder.appendChild(mp3);
-    }
+    const wrap = document.createElement("div");
+    wrap.className = "inta-menu-wrap";
+    const btn = document.createElement("button");
+    btn.className = "inta-menu";
+    btn.type = "button";
+    btn.textContent = "•••";
+    btn.title = "Reel actions (Inta-Enhancer)";
+    btn.setAttribute("aria-label", "Reel actions");
+    swallowToggle(btn);
+    const pop = document.createElement("div");
+    pop.className = "inta-menu-pop";
+    pop.setAttribute("role", "menu");
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const was = pop.classList.contains("open");
+      closeAllMenus(null);
+      if (!was) pop.classList.add("open");
+    });
+    pop.appendChild(menuRow("download", "Download", () => {
+      const url = video.currentSrc || video.src || video.querySelector("source")?.src || "";
+      if (!url) return toast("Video still loading — wait a second");
+      downloadUrl(url, `insta-reel-${Date.now()}.mp4`);
+    }));
+    pop.appendChild(menuRow("music", "Audio MP3", () => {
+      downloadMp3FromElement(video);
+    }));
+    pop.appendChild(menuRow("link", "Copy link", () => {
+      copyText(location.href, "Reel link copied!");
+    }));
+    wrap.appendChild(btn);
+    wrap.appendChild(pop);
+    try { holder.appendChild(wrap); } catch {}
   });
 }
 

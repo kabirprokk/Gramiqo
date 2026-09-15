@@ -16,8 +16,10 @@
 
 /* One ⋯ menu per post (super-simple UI): single button, dropdown rows.
    System colors adapt to IG light/dark automatically — PC look kept. */
-.inta-menu-wrap { position: absolute !important; top: 10px !important; right: 10px !important; z-index: 50000 !important; }
+.inta-menu-wrap { position: absolute !important; top: 10px !important; right: 10px !important; z-index: 999999 !important; pointer-events: auto !important; }
 .inta-menu {
+.inta-menu {
+  pointer-events: auto !important;
   width: 36px !important; height: 36px !important;
   border-radius: 50% !important; border: none !important;
   background: rgba(0,0,0,.7) !important; color: #fff !important;
@@ -29,12 +31,13 @@
 .inta-menu:hover { background: #0095F6 !important; }
 .inta-menu-pop {
   display: none !important;
+  pointer-events: auto !important;
   position: absolute !important; top: 42px !important; right: 0 !important;
   min-width: 178px !important;
   background: Canvas !important; color: CanvasText !important;
   border: 1px solid ButtonBorder !important; border-radius: 12px !important;
   box-shadow: 0 8px 28px rgba(0,0,0,.28) !important;
-  padding: 6px !important; z-index: 50001 !important;
+  padding: 6px !important; z-index: 999999 !important;
 }
 .inta-menu-pop.open { display: block !important; }
 .inta-menu-row {
@@ -78,6 +81,8 @@ div[role="dialog"] .inta-menu-pop { left: 0 !important; right: auto !important; 
    top-left — Instagram's like/comment rail owns the right edge there.
    Feed articles keep the right stack (nothing overlaps below the header). */
 .inta-lefty > .inta-reel-dl, .inta-lefty > .inta-reel-mp3 { left: 10px !important; right: auto !important; }
+.inta-lefty > .inta-menu-wrap { left: 10px !important; right: auto !important; }
+.inta-lefty > .inta-menu-wrap > .inta-menu-pop { left: 0 !important; right: auto !important; }
 div[role="dialog"] .inta-dl, div[role="dialog"] .inta-copy, div[role="dialog"] .inta-mp3,
 div[role="dialog"] .inta-tags, div[role="dialog"] .inta-linkcopy { left: 10px !important; right: auto !important; }
 
