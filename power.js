@@ -1,5 +1,5 @@
 /* ============================================================
-   Inta-Enhancer - power.js v1.0 (OLIN 1.1.b power pack)
+   Gramiqo - power.js v1.0 (OLIN 1.1.b power pack)
    Advanced, guarded, zero-dependency. Runs after content.js.
    Features: story saver, reels toolkit, ghost mode, Cmd-K
    palette, stats history, bulk saver, hashtag tools.
@@ -10,7 +10,7 @@
 // Shared inline-SVG icons (icons.js loads first). Fallback "" keeps UI working.
 const ic = (n, s) => {
   try {
-    return window.IntaIcons ? window.IntaIcons.svg(n, s || 16) : "";
+    return window.GramiqoIcons ? window.GramiqoIcons.svg(n, s || 16) : (window.IntaIcons ? window.IntaIcons.svg(n, s || 16) : "");
   } catch {
     return "";
   }
@@ -36,7 +36,7 @@ let S = { ...DEFAULTS };
 let paletteOpen = false;
 let bulkBtn = null;
 
-init().catch((e) => console.warn("[Inta-Power] init failed", e));
+init().catch((e) => console.warn("[Gramiqo] init failed", e));
 
 async function init() {
   try {
@@ -57,7 +57,7 @@ async function init() {
 
   setInterval(tick, 1500);
   tick();
-  console.log("[Inta-Power] OLIN 1.1.b loaded");
+  console.log("[Gramiqo] OLIN 1.1.b loaded");
 }
 
 function tick() {
@@ -75,7 +75,7 @@ function tick() {
     reelDialogTick();
     activityTick();
   } catch (e) {
-    console.warn("[Inta-Power] tick failed", e);
+    console.warn("[Gramiqo] tick failed", e);
   }
 }
 
@@ -99,7 +99,7 @@ function toast(msg) {
 function downloadUrl(url, filename) {
   if (!url || url.startsWith("blob:")) return toast("Media still loading — wait a sec");
   try {
-    chrome.runtime.sendMessage({ type: "INTA_DOWNLOAD", url, filename }, (res) => {
+    chrome.runtime.sendMessage({ type: "GRAMI_DOWNLOAD", url, filename }, (res) => {
       if (chrome.runtime.lastError || !res?.ok) toast("Download blocked — right-click > Save");
       else toast("Downloading…");
     });
@@ -131,7 +131,7 @@ function storySaverTick() {
   btn.type = "button";
   btn.className = "inta-story-dl";
   btn.innerHTML = ic("download", 15) + "<span>Save</span>";
-  btn.title = "Save this story (Inta-Enhancer)";
+  btn.title = "Save this story (Gramiqo)";
   btn.addEventListener("click", (e) => {
     e.preventDefault(); e.stopPropagation();
     if (target.tagName === "VIDEO") {
@@ -257,7 +257,7 @@ function bindPaletteKeys() {
       if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key || "").toLowerCase() === "n") {
         if (!S.quickCreate) return;
         if (paletteOpen) closePalette();
-        try { window.IntaOpenCreate?.(); } catch {}
+        try { window.GramiqoOpenCreate?.() ?? window.IntaOpenCreate?.(); } catch {}
         return;
       }
     } catch {}
@@ -269,15 +269,15 @@ const ACTIONS = [
   { id: "cap", icon: "copy", label: "Copy caption", hint: "C", run: () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "c" })) },
   { id: "full", icon: "expand", label: "Fullscreen visible", hint: "F", run: () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "f" })) },
   { id: "pip", icon: "image", label: "Picture-in-picture", hint: "P", run: () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "p" })) },
-  { id: "search", icon: "search", label: "Open search", run: () => { try { window.IntaOpenSearch?.(""); } catch {} } },
-  { id: "create", icon: "plus", label: "New post / reel", hint: "N", run: () => { try { window.IntaOpenCreate?.(); } catch {} } },
-  { id: "story", icon: "camera", label: "Story studio (compose 9:16)", run: () => { try { window.IntaOpenStory?.(); } catch {} } },
+  { id: "search", icon: "search", label: "Open search", run: () => { try { (window.GramiqoOpenSearch ?? window.IntaOpenSearch)?.(""); } catch {} } },
+  { id: "create", icon: "plus", label: "New post / reel", hint: "N", run: () => { try { (window.GramiqoOpenCreate ?? window.IntaOpenCreate)?.(); } catch {} } },
+  { id: "story", icon: "camera", label: "Story studio (compose 9:16)", run: () => { try { (window.GramiqoOpenStory ?? window.IntaOpenStory)?.(); } catch {} } },
   { id: "hd", icon: "user", label: "View HD profile pic", run: () => toast("Open a profile, then press HD") },
   { id: "explore", icon: "compass", label: "Go Explore", run: () => location.href = "https://www.instagram.com/explore/" },
   { id: "reels", icon: "film", label: "Go Reels", run: () => location.href = "https://www.instagram.com/reels/" },
   { id: "edit", icon: "edit", label: "Edit profile", run: () => location.href = "https://www.instagram.com/accounts/edit/" },
   { id: "copydlink", icon: "link", label: "Copy current page link", run: () => copyText(location.href, "Link copied!") },
-  { id: "settings", icon: "command", label: "All settings hub", run: () => { try { window.IntaOpenSettings?.(); } catch {} } },
+  { id: "settings", icon: "command", label: "All settings hub", run: () => { try { (window.GramiqoOpenSettings ?? window.IntaOpenSettings)?.(); } catch {} } },
   { id: "dark", icon: "moon", label: "Toggle dark mode", run: async () => {
       try {
         const s = await chrome.storage.sync.get({ darkMode: false });
@@ -479,7 +479,7 @@ function bulkSave(e) {
   toast(`Saving ${urls.length} photos…`);
   try {
     chrome.runtime.sendMessage({
-      type: "INTA_DOWNLOAD_MANY",
+      type: "GRAMI_DOWNLOAD_MANY",
       items: urls.map((url, i) => ({ url, filename: `insta-bulk-${Date.now()}-${i + 1}.jpg` })),
     }, (res) => {
       if (chrome.runtime.lastError) return toast("Bulk blocked — try single download");
@@ -498,7 +498,7 @@ function hashtagTick() {
     btn.type = "button";
     btn.className = "inta-tags";
     btn.innerHTML = ic("hash", 18);
-    btn.title = "Copy hashtags (Inta-Enhancer)";
+    btn.title = "Copy hashtags (Gramiqo)";
     btn.addEventListener("click", (ev) => {
       ev.preventDefault(); ev.stopPropagation();
       const text = (a.innerText || "").match(/#[\p{L}\p{N}_]+/gu);
@@ -516,7 +516,7 @@ function hashtagTick() {
    and would risk the account, so we open IG's OWN composer: same sheet,
    same uploads as the app, zero hacks. Entry points: top-bar ＋ button
    (content.js), Ctrl+K palette, and the N key. */
-window.IntaOpenCreate = function () {
+window.GramiqoOpenCreate = function () {
   try {
     openComposer();
     return true;
@@ -524,6 +524,7 @@ window.IntaOpenCreate = function () {
     return false;
   }
 };
+try { window.IntaOpenCreate = window.GramiqoOpenCreate; } catch {}
 
 // Every known shape of IG's Create entry (it renames often), tried in
 // order with verification after each click. Returns nothing — the result
@@ -739,7 +740,7 @@ function linkTick() {
     btn.type = "button";
     btn.className = "inta-linkcopy";
     btn.innerHTML = ic("link", 17);
-    btn.title = "Copy post link (Inta-Enhancer)";
+    btn.title = "Copy post link (Gramiqo)";
     btn.addEventListener("click", (ev) => {
       ev.preventDefault(); ev.stopPropagation();
       const href = anchor.getAttribute("href") || location.href;
@@ -756,8 +757,8 @@ function linkTick() {
    mobile app just calls an API (Private account = set_private /
    set_public, the same call the app makes — guarded with confirm +
    verify, like our links editor). Entry: Ctrl+K → All settings hub,
-   or the popup button (via INTA_OPEN_SETTINGS message). */
-window.IntaOpenSettings = function () {
+   or the popup button (via GRAMI_OPEN_SETTINGS message). */
+window.GramiqoOpenSettings = function () {
   try {
     openSettingsHub();
     return true;
@@ -765,6 +766,7 @@ window.IntaOpenSettings = function () {
     return false;
   }
 };
+try { window.IntaOpenSettings = window.GramiqoOpenSettings; } catch {}
 
 const ST_APP_ID = "936619743392459";
 
@@ -1064,7 +1066,7 @@ function openSettingsHub() {
       e.preventDefault();
       e.stopPropagation();
       closeSettingsHub();
-      try { window.IntaOpenStory?.(); } catch {}
+      try { (window.GramiqoOpenStory ?? window.IntaOpenStory)?.(); } catch {}
       return;
     }
     if (e.target.closest?.("[data-set-notesave]")) {
@@ -1160,7 +1162,7 @@ async function saveNote() {
     if (label) label.textContent = `live: "${text}"`;
     toast("Note posted!");
   } catch (e) {
-    console.warn("[Inta-Power] note save failed", e);
+    console.warn("[Gramiqo] note save failed", e);
     if (label) label.textContent = "post failed — try again";
     toast("Couldn't post note");
   }
@@ -1193,7 +1195,7 @@ async function deleteNote() {
     if (label) label.textContent = "no note yet — post one below";
     toast("Note deleted");
   } catch (e) {
-    console.warn("[Inta-Power] note delete failed", e);
+    console.warn("[Gramiqo] note delete failed", e);
     toast("Couldn't delete note");
   }
 }
@@ -1245,7 +1247,7 @@ async function togglePrivate(sw) {
     if (label) label.textContent = makePrivate ? "on — only followers see posts" : "off — anyone can see posts";
     toast(done ? (makePrivate ? "Account is now private" : "Account is now public") : "Saved — verify in Accounts Center");
   } catch (e) {
-    console.warn("[Inta-Power] private toggle failed", e);
+    console.warn("[Gramiqo] private toggle failed", e);
     if (label) label.textContent = "save failed — try again";
     toast("Couldn't change that setting");
   } finally {
@@ -1344,7 +1346,7 @@ function fmtMins(secs) {
    don't touch it. What IS real: compose the story file on PC (correct
    1080x1920 cover-crop, zoom, live 9:16 preview) and export it for a
    one-tap phone upload. Entry: Ctrl+K → Story studio, hub Posts row. */
-window.IntaOpenStory = function () {
+window.GramiqoOpenStory = function () {
   try {
     openStoryStudio();
     return true;
@@ -1352,6 +1354,7 @@ window.IntaOpenStory = function () {
     return false;
   }
 };
+try { window.IntaOpenStory = window.GramiqoOpenStory; } catch {}
 
 function openStoryStudio() {
   closeStoryStudio();

@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Inta-Enhancer",
+  "name": "Gramiqo",
   "version": "1.1.2",
   "version_name": "OLIN 1.1.b",
   "description": "Bring mobile Instagram features to PC web: Meta AI search, mobile-mode, story saver, reels toolkit, bulk download, profile insights, bio-links editor, HD pics & more. [OLIN 1.1.b]",
@@ -16,7 +16,7 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "default_title": "Inta-Enhancer"
+      "default_title": "Gramiqo"
   },
   "background": {
     "service_worker": "background.js"
@@ -24,7 +24,7 @@
   "content_scripts": [
     {
       "matches": ["*://*.instagram.com/*"],
-      "js": ["icons.js", "vendor/lame.min.js", "content.js", "search.js", "power.js"],
+      "js": ["icons.js", "content.js", "search.js", "power.js"],
       "css": ["content.css", "search.css", "power.css"],
       "run_at": "document_idle"
     }

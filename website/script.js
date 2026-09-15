@@ -1,4 +1,4 @@
-// Inta-Enhancer site: alive but respectful (reduced-motion aware).
+// Gramiqo site: alive but respectful (reduced-motion aware).
 (function () {
   "use strict";
   const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -96,7 +96,7 @@
     let names = [...document.querySelectorAll("#featureGrid .card b")]
       .map((b) => b.textContent.trim()).filter(Boolean);
     if (!names.length) {
-      names = ["Meta AI search", "Reels + MP3 downloads", "Story saver", "HD profile pics", "Notes editor", "Reels toolkit", "Bulk saver", "Command palette", "Bio-links editor", "Growth tracker"];
+      names = ["Meta AI search", "Reels + audio downloads", "Story saver", "HD profile pics", "Notes editor", "Reels toolkit", "Bulk saver", "Command palette", "Bio-links editor", "Growth tracker"];
     }
     const html = names.map((n) => `<span>${n.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</span>`).join("");
     track.innerHTML = html + html; // loop seam

@@ -1,5 +1,5 @@
 /* ============================================================
-   Inta-Enhancer - search.js v2.1 (native Meta UI)
+   Gramiqo - search.js v2.1 (native Meta UI)
    Mirrors mobile Meta search look inside desktop Instagram:
    Tabs: For you | Accounts | Reels | Audio | Tags
    - AI summary card (built from live topsearch, not fake)
@@ -14,7 +14,7 @@
 // Shared inline-SVG icons (icons.js loads first). Fallback "" keeps UI working.
 const ic = (n, s) => {
   try {
-    return window.IntaIcons ? window.IntaIcons.svg(n, s || 16) : "";
+    return window.GramiqoIcons ? window.GramiqoIcons.svg(n, s || 16) : (window.IntaIcons ? window.IntaIcons.svg(n, s || 16) : "");
   } catch {
     return "";
   }
@@ -37,8 +37,8 @@ let searchSeq = 0;
 
 // One-click diagnostics: every network surface records its outcome here
 // (surface, HTTP/error, ms, result size). Popup "Copy diagnostics" sends
-// INTA_GET_DIAG and pastes this — no DevTools needed to debug search.
-const INTA_VER = "1.1.2 (OLIN 1.1.b)";
+// GRAMI_GET_DIAG and pastes this — no DevTools needed to debug search.
+const GRAMI_VER = "1.1.2 (OLIN 1.1.b)";
 const diagFetches = [];
 function diagRec(surface, ok, info) {
   try {
@@ -61,7 +61,7 @@ function buildDiag() {
   } catch (e) { page = { err: String(e) }; }
   const d = lastData || {};
   return {
-    ver: INTA_VER, enabled, keywordFirst, activeTab, lastQuery,
+      ver: GRAMI_VER, enabled, keywordFirst, activeTab, lastQuery,
     counts: {
       users: (d.users || []).length, hashtags: (d.hashtags || []).length,
       places: (d.places || []).length, posts: (d.posts || []).length,
@@ -100,11 +100,12 @@ async function init() {
   } catch {}
   refreshPins().catch(() => {});
   try {
-    window.IntaDiag = () => { try { return buildDiag(); } catch (e) { return { err: String(e) }; } };
+    window.GramiqoDiag = () => { try { return buildDiag(); } catch (e) { return { err: String(e) }; } };
+    window.IntaDiag = window.GramiqoDiag;
   } catch {}
   try {
     chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-      if (msg && msg.type === "INTA_GET_DIAG") {
+      if (msg && (msg.type === "GRAMI_GET_DIAG" || msg.type === "INTA_GET_DIAG")) {
         try { sendResponse({ ok: true, diag: buildDiag() }); }
         catch (e) { try { sendResponse({ ok: false, err: String(e) }); } catch {} }
       }
@@ -147,7 +148,7 @@ function queueEnhance(delay = 400) {
     try {
       enhanceNative();
     } catch (e) {
-      console.warn("[Inta-Enhancer] search enhance failed", e);
+      console.warn("[Gramiqo] search enhance failed", e);
     }
   }, delay);
 }
@@ -155,7 +156,7 @@ function queueEnhance(delay = 400) {
 // Called by the Explore top-search pill. Drawer-first: focus any visible
 // search field; only click nav as last resort; standalone overlay fallback
 // guarantees Search ALWAYS opens even if IG renames its nav markup.
-window.IntaOpenSearch = function (preset) {
+window.GramiqoOpenSearch = function (preset) {
   try {
     const existing = findSearchInput();
     if (existing) {
@@ -209,6 +210,7 @@ window.IntaOpenSearch = function (preset) {
     return true;
   }
 };
+try { window.IntaOpenSearch = window.GramiqoOpenSearch; } catch {}
 
 /* Standalone overlay: our own search panel. Independent of IG's drawer,
    so Search works even when Instagram changes/removes its markup. */
@@ -276,7 +278,7 @@ function openOverlay(preset) {
       } catch {}
     }, 60);
   } catch (e) {
-    console.warn("[Inta-Enhancer] overlay failed", e);
+    console.warn("[Gramiqo] overlay failed", e);
   }
 }
 
@@ -814,7 +816,7 @@ function bindGlobalSearchKeys() {
         const inp = findSearchInput();
         if (inp) {
           e.preventDefault();
-          window.IntaOpenSearch?.();
+          window.GramiqoOpenSearch?.();
           setTimeout(() => {
             try {
               inp.focus();
@@ -823,7 +825,7 @@ function bindGlobalSearchKeys() {
         } else {
           // No drawer input (e.g. mobile markup): open our own search panel.
           e.preventDefault();
-          try { window.IntaOpenSearch?.(""); } catch {}
+          try { window.GramiqoOpenSearch?.(""); } catch {}
         }
       } else if (e.key === "Escape" && typing && t === findSearchInput()) {
         t.blur();

@@ -1,9 +1,9 @@
-/* Inta-Enhancer - native UI only, no floating panel.
+/* Gramiqo - native UI only, no floating panel.
    Icons are inline SVG (icons.js): inherit text color, sized per slot. */
 .inta-ic-svg { flex: 0 0 auto !important; vertical-align: -3px !important; }
 #inta-profile-bar button { display: inline-flex !important; align-items: center !important; gap: 6px !important; }
 #inta-profile-bar button .inta-ic-svg { width: 16px !important; height: 16px !important; }
-.inta-dl .inta-ic-svg, .inta-copy .inta-ic-svg, .inta-reel-dl .inta-ic-svg, .inta-mp3 .inta-ic-svg, .inta-reel-mp3 .inta-ic-svg { width: 18px !important; height: 18px !important; }
+.inta-dl .inta-ic-svg, .inta-copy .inta-ic-svg, .inta-reel-dl .inta-ic-svg { width: 18px !important; height: 18px !important; }
 .inta-avatar-badge { display: inline-flex !important; align-items: center !important; gap: 4px !important; }
 .inta-avatar-badge .inta-ic-svg { width: 11px !important; height: 11px !important; }
 #inta-top-search .inta-ic-svg { width: 16px !important; height: 16px !important; }
@@ -69,7 +69,7 @@ div[role="dialog"] .inta-menu-wrap { left: 10px !important; right: auto !importa
 div[role="dialog"] .inta-menu-pop { left: 0 !important; right: auto !important; }
 
 /* per-post buttons (stack: download 10 / copy 54 / tags live in power.css) */
-.inta-dl, .inta-copy, .inta-reel-dl, .inta-mp3, .inta-reel-mp3 {
+.inta-dl, .inta-copy, .inta-reel-dl {
   position: absolute !important;
   z-index: 50000 !important;
   width: 36px !important;
@@ -87,18 +87,16 @@ div[role="dialog"] .inta-menu-pop { left: 0 !important; right: auto !important; 
 }
 .inta-dl { top: 10px !important; right: 10px !important; }
 .inta-copy { top: 54px !important; right: 10px !important; }
-.inta-mp3 { top: 98px !important; right: 10px !important; }
 .inta-reel-dl { top: 10px !important; right: 10px !important; }
-.inta-reel-mp3 { top: 54px !important; right: 10px !important; }
-.inta-dl:hover, .inta-copy:hover, .inta-reel-dl:hover, .inta-mp3:hover, .inta-reel-mp3:hover { background: #0095F6 !important; }
+.inta-dl:hover, .inta-copy:hover, .inta-reel-dl:hover { background: #0095F6 !important; }
 
 /* Left dock: reels holders + post modals (role=dialog) keep our stack
    top-left — Instagram's like/comment rail owns the right edge there.
    Feed articles keep the right stack (nothing overlaps below the header). */
-.inta-lefty > .inta-reel-dl, .inta-lefty > .inta-reel-mp3 { left: 10px !important; right: auto !important; }
+.inta-lefty > .inta-reel-dl { left: 10px !important; right: auto !important; }
 .inta-lefty > .inta-menu-wrap { left: 10px !important; right: auto !important; }
 .inta-lefty > .inta-menu-wrap > .inta-menu-pop { left: 0 !important; right: auto !important; }
-div[role="dialog"] .inta-dl, div[role="dialog"] .inta-copy, div[role="dialog"] .inta-mp3,
+div[role="dialog"] .inta-dl, div[role="dialog"] .inta-copy,
 div[role="dialog"] .inta-tags, div[role="dialog"] .inta-linkcopy { left: 10px !important; right: auto !important; }
 
 /* mobile-like profile bar (AFTER header — never inside it) */

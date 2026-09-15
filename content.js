@@ -1,5 +1,5 @@
 /* ============================================================
-   Inta-Enhancer - content.js v1.3.0 (production)
+   Gramiqo - content.js v1.3.0 (production)
    Runs INSIDE every instagram.com page. No floating panel.
    Everything is injected NATIVELY + guarded for SPA nav.
    ============================================================ */
@@ -9,7 +9,7 @@
 // Shared inline-SVG icons (icons.js loads first). Fallback "" keeps UI working.
 const ic = (n, s) => {
   try {
-    return window.IntaIcons ? window.IntaIcons.svg(n, s || 16) : "";
+    return window.GramiqoIcons ? window.GramiqoIcons.svg(n, s || 16) : "";
   } catch {
     return "";
   }
@@ -59,14 +59,14 @@ let enhanceScheduled = false;
 let lens = null;
 let lensBound = false;
 
-init().catch((e) => console.warn("[Inta-Enhancer] init failed", e));
+init().catch((e) => console.warn("[Gramiqo] init failed", e));
 
 async function init() {
   try {
     const stored = await chrome.storage.sync.get(DEFAULTS);
     settings = { ...DEFAULTS, ...stored };
   } catch (e) {
-    console.warn("[Inta-Enhancer] storage not ready, using defaults", e);
+    console.warn("[Gramiqo] storage not ready, using defaults", e);
   }
 
   try {
@@ -87,9 +87,10 @@ async function init() {
   // Popup → page bridge (e.g. "All settings hub" button).
   try {
     chrome.runtime.onMessage.addListener((msg) => {
-      if (msg?.type === "INTA_OPEN_SETTINGS") {
+      if (msg?.type === "GRAMI_OPEN_SETTINGS" || msg?.type === "INTA_OPEN_SETTINGS") {
         try {
-          if (typeof window.IntaOpenSettings === "function") window.IntaOpenSettings();
+          if (typeof window.GramiqoOpenSettings === "function") window.GramiqoOpenSettings();
+          else if (typeof window.IntaOpenSettings === "function") window.IntaOpenSettings();
         } catch {}
       }
       return false;
@@ -128,7 +129,7 @@ async function init() {
   scheduleEnhance(0);
   onRouteChange();
   watchBlankPage();
-  console.log("[Inta-Enhancer] OLIN 1.1.b loaded. Keys: D=download C=caption F=fullscreen P=PiP /=search Ctrl+K=commands");
+  console.log("[Gramiqo] OLIN 1.1.b loaded. Keys: D=download C=caption F=fullscreen P=PiP /=search Ctrl+K=commands");
 }
 
 /* Blank-page watchdog: if Mobile feel's iPhone UA leaves instagram.com an
@@ -162,7 +163,7 @@ function scheduleEnhance(delay = 900) {
     try {
       enhanceAll();
     } catch (e) {
-      console.warn("[Inta-Enhancer] enhance failed", e);
+      console.warn("[Gramiqo] enhance failed", e);
     }
   };
   // Idle callback keeps clicks smooth; fallback to timeout.
@@ -185,7 +186,7 @@ function enhanceAll() {
     try {
       fn();
     } catch (e) {
-      console.warn("[Inta-Enhancer] enhance step failed", fn && fn.name, e);
+      console.warn("[Gramiqo] enhance step failed", fn && fn.name, e);
     }
   }
 }
@@ -380,7 +381,7 @@ function downloadUrl(url, filename) {
     return;
   }
   try {
-    chrome.runtime.sendMessage({ type: "INTA_DOWNLOAD", url, filename }, (res) => {
+    chrome.runtime.sendMessage({ type: "GRAMI_DOWNLOAD", url, filename }, (res) => {
       if (chrome.runtime.lastError || !res?.ok) toast("Download blocked — right-click > Save");
       // Success was already announced instantly below — stay quiet.
     });
@@ -394,7 +395,7 @@ function downloadVisibleMedia() {
   const m = getVisibleMedia();
   if (!m || !m.url) return toast("Scroll to a photo/reel first");
   const ext = m.type === "video" ? "mp4" : "jpg";
-  downloadUrl(m.url, `insta-${m.type}-${Date.now()}.${ext}`);
+  downloadUrl(m.url, `gramiqo-${m.type}-${Date.now()}.${ext}`);
 }
 
 // Resolve the BEST savable video URL: element URL → network-remembered
@@ -425,7 +426,7 @@ async function resolveDownloadUrl(video) {
   try {
     const cur = video ? (video.currentSrc || video.src || "") : "";
     if (/^https?:\/\//.test(cur) && !cur.startsWith("blob:")) return { url: cur, via: "direct" };
-    const remembered = await sendMsg({ type: "INTA_GET_MEDIA" });
+    const remembered = await sendMsg({ type: "GRAMI_GET_MEDIA" });
     if (remembered?.url && /^https?:\/\//.test(remembered.url)) return { url: remembered.url, via: "network" };
     const og = pageVideoUrl();
     if (og) return { url: og, via: "page" };
@@ -434,47 +435,87 @@ async function resolveDownloadUrl(video) {
   return { url: "", via: "" };
 }
 
-/* ---------------- MP3 audio (320kbps, on-device, no server) ----------------
-   FAST PATH (new): fetch the video file itself → native decode →
-   OfflineAudioContext render at full CPU speed → lamejs 320k MP3.
-   Seconds, not realtime — no playback, tab can even be backgrounded.
-   FALLBACK (old): tap the playing <video> and capture one realtime pass
-   (blob: URLs, protected streams). Whatever you hear is what gets saved. */
-async function downloadMp3FromElement(video) {
+/* ---------------- audio extraction: instant, on-device, single button -----
+   Why downloader sites feel instant: they never re-record. They fetch the
+   direct .mp4 Instagram already streams and split the audio track out
+   (demux) in milliseconds. This does the same thing, fully on-device:
+     1. resolveDownloadUrl() finds the hidden direct .mp4 (element URL ->
+        network-remembered file -> og:video meta) — the exact file IG streams.
+     2. fetchAudioBytes() grabs its bytes (page fetch, background relay if the
+        CDN refuses page-context CORS).
+     3. extractAacFromMp4() parses MP4 boxes, locates the AAC track and slices
+        its samples out of mdat, re-wrapping each raw frame with an ADTS
+        header -> .aac. No decode, no re-encode, original quality, milliseconds.
+     4. Fallback: decodeToWav() via native decodeAudioData -> .wav.
+   A server pipeline (proxy pools, bot accounts, FFmpeg farm) can't run inside
+   a zero-backend MV3 extension — and would break the "0 servers" promise.
+   This is the fastest honest equivalent. No recording, no re-encode. */
+async function downloadAudioFromElement(video) {
   if (!settings.downloadBtn) return toast("Enable Download in popup first");
-  if (!video) return toast("Video still loading — wait a second");
-  if (!window.lamejs?.Mp3Encoder) return toast("Audio engine missing — reload the extension");
-  toast("Preparing MP3…"); // instant feedback — the wait popup
-  // Best file first: network-remembered direct .mp4 beats blob/protected.
+  toast("Finding audio…");
   let url = "";
   try {
     const r = await resolveDownloadUrl(video);
     url = r.url || "";
   } catch {}
-  if (!url) url = video.currentSrc || video.src || "";
-  if (url && /^https?:\/\//.test(url)) {
-    try {
-      await downloadMp3Fast(url);
-      return;
-    } catch (e) {
-      console.warn("[Inta-Enhancer] fast mp3 failed, realtime fallback", e);
-    }
+  if (!url) {
+    try { url = video.currentSrc || video.src || ""; } catch {}
   }
-  await downloadMp3Realtime(video);
+  if (!url || url.startsWith("blob:")) return toast("Video still loading — wait a second");
+  toast("Fetching audio…");
+  let ab = null;
+  try {
+    ab = await fetchAudioBytes(url);
+  } catch (e) {
+    return toast("Couldn't fetch audio here");
+  }
+  if (!ab || !ab.byteLength) return toast("Couldn't fetch audio here");
+  // Path 1 — instant demux: slice AAC frames straight out of the .mp4.
+  try {
+    const out = extractAacFromMp4(ab);
+    if (out && out.frames > 0 && out.bytes && out.bytes.length > 512) {
+      saveAudioBlob([out.bytes], "audio/aac", "gramiqo-audio-" + Date.now() + ".aac");
+      toast("Audio saved!");
+      return;
+    }
+    throw new Error("no-frames");
+  } catch (e) {
+    console.warn("[Gramiqo] aac demux failed, wav fallback", (e && e.message) || e);
+  }
+  // Path 2 — native decode to WAV (fast C++ decode, trivial PCM wrap).
+  try {
+    toast("Encoding audio…");
+    const wav = await decodeToWav(ab);
+    saveAudioBlob([wav], "audio/wav", "gramiqo-audio-" + Date.now() + ".wav");
+    toast("Audio saved!");
+  } catch (e) {
+    toast("Couldn't extract audio here");
+  }
 }
 
-async function downloadMp3Fast(url) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => { try { ctrl.abort(); } catch {} }, 90000);
+function saveAudioBlob(parts, mime, name) {
+  const blob = new Blob(parts, { type: mime });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => { try { URL.revokeObjectURL(a.href); } catch {} }, 15000);
+}
+
+/* Fetch with visible progress; falls back to the background worker (extension
+   origin + host permissions) when the CDN refuses page-context CORS. */
+async function fetchAudioBytes(url) {
   try {
-    const res = await fetch(url, { credentials: "include", signal: ctrl.signal });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    // Visible progress: quartile toasts while the file streams in.
-    let raw = null;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => { try { ctrl.abort(); } catch {} }, 120000);
     try {
+      const res = await fetch(url, { credentials: "include", signal: ctrl.signal });
+      if (!res.ok) throw new Error("HTTP " + res.status);
       const total = Number(res.headers.get("content-length")) || 0;
       const reader = res.body && res.body.getReader ? res.body.getReader() : null;
-      if (reader && total > 0) {
+      if (reader && total > 0 && total <= 120 * 1024 * 1024) {
         const chunks = [];
         let got = 0;
         let mark = 0;
@@ -487,263 +528,354 @@ async function downloadMp3Fast(url) {
           const pct = Math.floor((got / total) * 100);
           if (pct >= mark + 25 && pct < 100) {
             mark = pct - (pct % 25);
-            toast(`Fetching audio ${mark}%…`);
+            toast("Fetching audio " + mark + "%…");
           }
+          if (got > 120 * 1024 * 1024) throw new Error("too-big");
         }
-        raw = concatU8(chunks, got);
-      } else {
-        raw = await res.arrayBuffer();
+        const out = new Uint8Array(got);
+        let off = 0;
+        for (const c of chunks) {
+          const u = c instanceof Uint8Array ? c : new Uint8Array(c.buffer || c);
+          out.set(u.subarray(0, Math.min(u.length, got - off)), off);
+          off += Math.min(u.length, got - off);
+        }
+        clearTimeout(timer);
+        if (!off) throw new Error("empty-file");
+        return out.buffer;
       }
+      const ab = await res.arrayBuffer();
+      clearTimeout(timer);
+      if (!ab || !ab.byteLength) throw new Error("empty-file");
+      if (ab.byteLength > 120 * 1024 * 1024) throw new Error("too-big");
+      return ab;
     } catch (e) {
-      if (!raw) throw e;
+      clearTimeout(timer);
+      throw e;
     }
-    if (!raw || !raw.byteLength) throw new Error("empty-file");
-  toast("Decoding audio…");
-  const AC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  if (!AC) throw new Error("no-offline");
-  const scratch = new AC(1, 44100, 44100);
-  const decoded = await new Promise((resolve, reject) => {
-    try {
-      const p = scratch.decodeAudioData(raw.slice(0), resolve, reject);
-      if (p && typeof p.then === "function") p.then(resolve, reject);
-    } catch (e) {
-      reject(e);
-    }
-  });
-  const dur = Math.min(Number(decoded.duration) || 0, 600);
-  if (!dur || !isFinite(dur) || dur < 0.5) throw new Error("no-duration");
-  const rate = 44100;
-  const off = new AC(decoded.numberOfChannels >= 2 ? 2 : 1, Math.ceil(dur * rate), rate);
-  const src = off.createBufferSource();
-  src.buffer = decoded;
-  src.connect(off.destination);
-  try { src.start(0, 0, dur); } catch { try { src.start(0); } catch {} }
-  const rendered = await off.startRendering();
-  toast("Encoding MP3…");
-  const L = rendered.getChannelData(0);
-  const R = rendered.numberOfChannels > 1 ? rendered.getChannelData(1) : L;
-  const parts = await encodePcmAsync(rate, L, R);
-  if (!parts.length) throw new Error("encode-empty");
-  const blob = new Blob(parts, { type: "audio/mpeg" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `insta-audio-${Date.now()}.mp3`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 15000);
-  toast("Audio saved!");
   } catch (e) {
-    clearTimeout(timer);
-    throw e;
-  }
-  clearTimeout(timer);
-}
-
-async function downloadMp3Realtime(video) {
-  if (!settings.downloadBtn) return toast("Enable Download in popup first");
-  if (!video) return toast("Video still loading — wait a second");
-  if (video.dataset.intaCaptured) return toast("Reload the page for another capture");
-  const Ctx = window.AudioContext || window.webkitAudioContext;
-  if (!Ctx) return toast("Audio not supported here");
-  if (!window.lamejs?.Mp3Encoder) return toast("Audio engine missing — reload the extension");
-  toast("Recording audio — keep this tab open…");
-  let ctx = null;
-  let src = null;
-  let proc = null;
-  const prevMuted = video.muted;
-  const prevRate = video.playbackRate;
-  const prevLoop = video.loop;
-  try {
-    ctx = new Ctx();
-    try { await ctx.resume(); } catch {}
-    try {
-      src = ctx.createMediaElementSource(video);
-    } catch (e) {
-      throw new Error("tap-used");
-    }
-    const chL = [];
-    const chR = [];
-    proc = ctx.createScriptProcessor(4096, 2, 2);
-    proc.onaudioprocess = (e) => {
-      try {
-        const ib = e.inputBuffer;
-        chL.push(new Float32Array(ib.getChannelData(0)));
-        chR.push(
-          ib.numberOfChannels > 1
-            ? new Float32Array(ib.getChannelData(1))
-            : new Float32Array(ib.getChannelData(0))
-        );
-      } catch {}
-    };
-    src.connect(proc);
-    proc.connect(ctx.destination);
-    // Mark manual so Data Saver never pauses our capture mid-take.
-    try { video.dataset.intaManual = "1"; } catch {}
-    video.muted = false;
-    try { video.volume = 1; } catch {}
-    video.loop = false;
-    try { video.currentTime = 0; } catch {}
-    try {
-      await video.play();
-    } catch (e) {
-      throw new Error("play-blocked");
-    }
-    const dur = Number(video.duration);
-    const capMs = (Number.isFinite(dur) && dur > 0 ? Math.min(dur, 600) : 120) * 1000 + 6000;
-    await waitVideoEnd(video, capMs);
-    const sr = ctx.sampleRate || 44100;
-    const L = concatF32(chL);
-    const R = concatF32(chR);
-    try { proc.disconnect(); } catch {}
-    try { src.disconnect(); } catch {}
-    try { await ctx.close(); } catch {}
-    ctx = null;
-    try { video.pause(); } catch {}
-    video.muted = prevMuted;
-    try { video.playbackRate = prevRate; } catch {}
-    video.loop = prevLoop;
-    if (!L.length) throw new Error("empty-capture");
-    const parts = encodePcm(sr, L, R);
-    if (!parts.length) throw new Error("encode-empty");
-    try { video.dataset.intaCaptured = "1"; } catch {}
-    const blob = new Blob(parts, { type: "audio/mpeg" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `insta-audio-${Date.now()}.mp3`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 15000);
-    toast("Audio saved!");
-  } catch (e) {
-    try { proc?.disconnect(); } catch {}
-    try { src?.disconnect(); } catch {}
-    try { await ctx?.close(); } catch {}
-    try { video.pause(); } catch {}
-    try {
-      video.muted = prevMuted;
-      video.playbackRate = prevRate;
-      video.loop = prevLoop;
-    } catch {}
-    const msg = String((e && e.message) || e || "");
-    console.warn("[Inta-Enhancer] mp3 failed", e);
-    if (msg === "play-blocked") toast("Tap the video once, then retry");
-    else if (msg === "tap-used") toast("Reload the page for another capture");
-    else toast("Couldn't capture audio here");
+    // Page fetch blocked (CORS) or failed — ask the background worker.
+    const r = await sendMsg({ type: "GRAMI_FETCH_BYTES", url: url });
+    if (r && r.ok && r.buf && r.buf.byteLength) return r.buf;
+    throw new Error("fetch-failed");
   }
 }
 
-function waitVideoEnd(video, capMs) {
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      try { video.removeEventListener("ended", finish); } catch {}
-      resolve();
-    };
-    try { video.addEventListener("ended", finish); } catch {}
-    setTimeout(finish, Math.max(5000, Math.min(capMs || 60000, 660000)));
-  });
-}
+/* ===== audio-pure: MP4 -> AAC demux (pure JS, no DOM/chrome — unit-tested) ===== */
+const AAC_RATES = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12050, 11025, 8000, 7350];
 
-function concatF32(chunks) {
-  let total = 0;
-  for (const c of chunks) total += c.length;
-  const out = new Float32Array(total);
-  let off = 0;
-  for (const c of chunks) {
-    out.set(c, off);
-    off += c.length;
+function mp4U32(u8, o) { return ((u8[o] * 16777216) + ((u8[o + 1] << 16) | (u8[o + 2] << 8) | u8[o + 3])) >>> 0; }
+function mp4U64(u8, o) { return mp4U32(u8, o) * 4294967296 + mp4U32(u8, o + 4); }
+function mp4Tag(u8, o) { return String.fromCharCode(u8[o], u8[o + 1], u8[o + 2], u8[o + 3]); }
+
+/* Parse child boxes in [start, end). Strict: stops at the first malformed
+   header so garbage can never cause an infinite loop. */
+function mp4Children(u8, start, end) {
+  const out = [];
+  const len = u8.length;
+  if (!(start >= 0) || !(end > start)) return out;
+  if (end > len) end = len;
+  let p = start;
+  while (p + 8 <= end) {
+    let size = mp4U32(u8, p);
+    const type = mp4Tag(u8, p + 4);
+    let hdr = 8;
+    if (size === 1) {
+      if (p + 16 > end) break;
+      size = mp4U64(u8, p + 8);
+      hdr = 16;
+    } else if (size === 0) {
+      size = end - p;
+    }
+    if (!(size >= hdr) || p + size > end) break;
+    out.push({ type: type, cstart: p + hdr, cend: p + size });
+    if (out.length > 1024) break;
+    p += size;
   }
   return out;
 }
 
-function concatU8(chunks, total) {
-  const out = new Uint8Array(total);
-  let off = 0;
-  for (const c of chunks) {
-    try {
-      const u = c instanceof Uint8Array ? c : new Uint8Array(c.buffer || c);
-      out.set(u.subarray(0, Math.min(u.length, total - off)), off);
-      off += Math.min(u.length, total - off);
-    } catch {}
-  }
-  return off > 0 ? out.buffer : new ArrayBuffer(0);
+function mp4Find(u8, start, end, type) {
+  const kids = mp4Children(u8, start, end);
+  for (const k of kids) if (k.type === type) return k;
+  return null;
 }
 
-// Non-blocking encode: yields to the page every chunk so long audio never
-// freezes the tab. (Sync encodePcm below stays for the realtime path.)
-async function encodePcmAsync(sampleRate, ch0, ch1) {
-  const sr = sampleRate || 44100;
-  const channels = ch1 && ch1.length === ch0.length ? 2 : 1;
-  const enc = new window.lamejs.Mp3Encoder(channels, sr, 320);
-  const toI16 = (f) => {
-    const o = new Int16Array(f.length);
-    for (let i = 0; i < f.length; i++) {
-      const s = Math.max(-1, Math.min(1, f[i]));
-      o[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+/* Byte-scan for every box of a type in a small region (sample-entry layouts
+   vary by encoder, so scan instead of hard-coding offsets). */
+function mp4ScanAll(u8, start, end, type) {
+  const found = [];
+  const len = u8.length;
+  if (end > len) end = len;
+  const c0 = type.charCodeAt(0), c1 = type.charCodeAt(1), c2 = type.charCodeAt(2), c3 = type.charCodeAt(3);
+  for (let p = start; p + 8 <= end; p++) {
+    if (u8[p + 4] === c0 && u8[p + 5] === c1 && u8[p + 6] === c2 && u8[p + 7] === c3) {
+      const size = mp4U32(u8, p);
+      if (size >= 8 && p + size <= end) found.push({ type: type, cstart: p + 8, cend: p + size });
     }
-    return o;
-  };
-  const L = toI16(ch0);
-  const R = channels === 2 ? toI16(ch1) : null;
-  const out = [];
-  const FRAME = 1152;
+  }
+  return found;
+}
+
+function mp4Varint(u8, p, end) {
+  let v = 0;
   let n = 0;
-  for (let i = 0; i < L.length; i += FRAME) {
-    const l = L.subarray(i, i + FRAME);
-    const r = R ? R.subarray(i, i + FRAME) : l;
-    let d = null;
-    try {
-      d = channels === 2 ? enc.encodeBuffer(l, r) : enc.encodeBuffer(l);
-    } catch {
-      break;
-    }
-    if (d && d.length) out.push(new Uint8Array(d.buffer, d.byteOffset, d.length));
-    n += 1;
-    if (n % 512 === 0) await new Promise((r) => setTimeout(r, 0));
+  while (p < end && n < 4) {
+    const b = u8[p++];
+    n++;
+    v = (v << 7) | (b & 0x7f);
+    if (!(b & 0x80)) return { value: v >>> 0, next: p };
   }
-  try {
-    const end = enc.flush();
-    if (end && end.length) out.push(new Uint8Array(end.buffer, end.byteOffset, end.length));
-  } catch {}
-  return out;
+  return null;
 }
 
-function encodePcm(sampleRate, ch0, ch1) {
-  const sr = sampleRate || 44100;
-  const channels = ch1 && ch1.length === ch0.length ? 2 : 1;
-  const enc = new window.lamejs.Mp3Encoder(channels, sr, 320);
-  const toI16 = (f) => {
-    const o = new Int16Array(f.length);
-    for (let i = 0; i < f.length; i++) {
-      const s = Math.max(-1, Math.min(1, f[i]));
-      o[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+/* Parse esds descriptors (caller passes the region AFTER version/flags).
+   Descends into 0x03/0x04 scopes — the 0x05 audio config lives nested inside
+   the 0x04 decoder config, so a flat scan would skip it. Throws otherwise. */
+function mp4ParseEsds(u8, start, end) {
+  let p = start;
+  let objectType = 0;
+  let asc = null;
+  const stack = [end];
+  while (p + 2 <= stack[stack.length - 1]) {
+    const tag = u8[p++];
+    const lv = mp4Varint(u8, p, stack[stack.length - 1]);
+    if (!lv) break;
+    p = lv.next;
+    const valEnd = Math.min(p + lv.value, stack[stack.length - 1]);
+    if (tag === 0x03) {
+      if (p + 3 > valEnd) break;
+      p += 3; // ES_ID(2) + flags(1); nested descriptors follow inline
+      stack.push(valEnd);
+      continue;
     }
-    return o;
-  };
-  const L = toI16(ch0);
-  const R = channels === 2 ? toI16(ch1) : null;
-  const out = [];
-  const FRAME = 1152;
-  for (let i = 0; i < L.length; i += FRAME) {
-    const l = L.subarray(i, i + FRAME);
-    const r = R ? R.subarray(i, i + FRAME) : l;
-    let d = null;
-    try {
-      d = channels === 2 ? enc.encodeBuffer(l, r) : enc.encodeBuffer(l);
-    } catch {
-      break;
+    if (tag === 0x04) {
+      // objectType(1) + streamType(1) + bufferSize(3) + maxBR(4) + avgBR(4)
+      if (p + 13 > valEnd) break;
+      objectType = u8[p];
+      p += 13; // decoder-specific info (0x05) + SL config follow inline
+      stack.push(valEnd);
+      continue;
     }
-    if (d && d.length) out.push(new Uint8Array(d.buffer, d.byteOffset, d.length));
+    if (tag === 0x05) {
+      asc = u8.slice(p, valEnd);
+    }
+    p = valEnd;
+    while (stack.length > 1 && p >= stack[stack.length - 1]) stack.pop();
   }
+  if (!asc || asc.length < 2) throw new Error("no-asc");
+  if (objectType !== 0x40) throw new Error("not-aac");
+  return { objectType: objectType, asc: asc };
+}
+
+function mp4AscParams(asc) {
+  const b0 = asc[0], b1 = asc[1];
+  const profile = (b0 >> 3) & 0x1f; // 2 = AAC-LC
+  const freqIdx = ((b0 & 0x07) << 1) | ((b1 >> 7) & 0x01);
+  const chanCfg = (b1 >> 3) & 0x0f;
+  if (profile !== 2) throw new Error("bad-profile");
+  if (freqIdx > 12) throw new Error("bad-rate");
+  if (chanCfg < 1 || chanCfg > 7) throw new Error("bad-channels");
+  return { profile: profile, freqIdx: freqIdx, chanCfg: chanCfg, rate: AAC_RATES[freqIdx] };
+}
+
+function mp4AdtsHeader(profile, freqIdx, chanCfg, frameLen) {
+  const h = new Uint8Array(7);
+  h[0] = 0xff;
+  h[1] = 0xf1; // MPEG-4, layer 0, no CRC
+  h[2] = ((profile - 1) << 6) | (freqIdx << 2) | ((chanCfg >> 2) & 0x01);
+  h[3] = ((chanCfg & 0x03) << 6) | ((frameLen >> 11) & 0x03);
+  h[4] = (frameLen >> 3) & 0xff;
+  h[5] = ((frameLen & 0x07) << 5) | 0x1f;
+  h[6] = 0xfc;
+  return h;
+}
+
+/* Main entry: ArrayBuffer of a progressive .mp4 -> {bytes: ADTS AAC,
+   frames, rate}. Throws short codes on anything unexpected. */
+function extractAacFromMp4(ab) {
+  if (!ab || !ab.byteLength) throw new Error("empty-file");
+  if (ab.byteLength > 150 * 1024 * 1024) throw new Error("too-big");
+  const u8 = ab instanceof Uint8Array ? ab : new Uint8Array(ab);
+  const len = u8.length;
+  if (len < 32) throw new Error("not-mp4");
+  const moov = mp4Find(u8, 0, len, "moov");
+  if (!moov) throw new Error("no-moov");
+  const traks = mp4Children(u8, moov.cstart, moov.cend).filter((b) => b.type === "trak");
+  if (!traks.length) throw new Error("no-trak");
+  for (const trak of traks) {
+    try {
+      return extractAacTrack(u8, trak);
+    } catch (e) {
+      if (String((e && e.message) || e) === "not-audio") continue; // video trak — try next
+      throw e;
+    }
+  }
+  throw new Error("no-audio-track");
+}
+
+function extractAacTrack(u8, trak) {
+  const len = u8.length;
+  const mdia = mp4Find(u8, trak.cstart, trak.cend, "mdia");
+  if (!mdia) throw new Error("no-mdia");
+  const hdlr = mp4Find(u8, mdia.cstart, mdia.cend, "hdlr");
+  if (!hdlr || hdlr.cend - hdlr.cstart < 12) throw new Error("not-audio");
+  if (mp4Tag(u8, hdlr.cstart + 8) !== "soun") throw new Error("not-audio");
+  const mdhd = mp4Find(u8, mdia.cstart, mdia.cend, "mdhd");
+  if (!mdhd) throw new Error("no-mdhd");
+  const minf = mp4Find(u8, mdia.cstart, mdia.cend, "minf");
+  if (!minf) throw new Error("no-minf");
+  const stbl = mp4Find(u8, minf.cstart, minf.cend, "stbl");
+  if (!stbl) throw new Error("no-stbl");
+
+  // Codec config: find mp4a entries, then an esds child (scan — offsets vary).
+  const stsd = mp4Find(u8, stbl.cstart, stbl.cend, "stsd");
+  if (!stsd || stsd.cend - stsd.cstart < 16) throw new Error("no-stsd");
+  const mp4aList = mp4ScanAll(u8, stsd.cstart + 8, stsd.cend, "mp4a");
+  if (!mp4aList.length) throw new Error("not-mp4a");
+  let par = null;
+  for (const mp4a of mp4aList) {
+    const esdsList = mp4ScanAll(u8, mp4a.cstart, mp4a.cend, "esds");
+    for (const esds of esdsList) {
+      try {
+        const cfg = mp4ParseEsds(u8, esds.cstart + 4, esds.cend); // skip version/flags
+        par = mp4AscParams(cfg.asc);
+        break;
+      } catch (e) { /* try next esds candidate */ }
+    }
+    if (par) break;
+  }
+  if (!par) throw new Error("no-aac-config");
+
+  // Sample tables.
+  const stts = mp4Find(u8, stbl.cstart, stbl.cend, "stts");
+  const stsc = mp4Find(u8, stbl.cstart, stbl.cend, "stsc");
+  const stsz = mp4Find(u8, stbl.cstart, stbl.cend, "stsz");
+  const stco = mp4Find(u8, stbl.cstart, stbl.cend, "stco");
+  const co64 = stco ? null : mp4Find(u8, stbl.cstart, stbl.cend, "co64");
+  if (!stts || !stsc || !stsz || (!stco && !co64)) throw new Error("no-tables");
+
+  // stsz: uniform size or per-sample table.
+  let p = stsz.cstart + 4;
+  const uniSize = mp4U32(u8, p); p += 4;
+  const sampleCount = mp4U32(u8, p); p += 4;
+  if (!(sampleCount >= 1) || sampleCount > 500000) throw new Error("bad-count");
+  let sizes = null;
+  if (uniSize === 0) {
+    sizes = new Array(sampleCount);
+    for (let i = 0; i < sampleCount; i++) {
+      if (p + 4 > stsz.cend) throw new Error("bad-stsz");
+      sizes[i] = mp4U32(u8, p); p += 4;
+      if (!(sizes[i] >= 1) || sizes[i] > 8 * 1024 * 1024) throw new Error("bad-size");
+    }
+  } else if (!(uniSize >= 1) || uniSize > 8 * 1024 * 1024) {
+    throw new Error("bad-size");
+  }
+  // stsc: chunk map.
+  p = stsc.cstart + 4;
+  const scCount = mp4U32(u8, p); p += 4;
+  if (!(scCount >= 1) || scCount > 100000) throw new Error("bad-stsc");
+  const map = [];
+  for (let i = 0; i < scCount; i++) {
+    if (p + 12 > stsc.cend) throw new Error("bad-stsc");
+    const first = mp4U32(u8, p), spc = mp4U32(u8, p + 4);
+    p += 12;
+    if (!(first >= 1) || !(spc >= 1) || spc > 100000) throw new Error("bad-stsc");
+    map.push({ first: first, spc: spc });
+  }
+  // Chunk offsets (stco 32-bit or co64 64-bit).
+  const coBox = stco || co64;
+  const wide = !stco;
+  p = coBox.cstart + 4;
+  const chCount = mp4U32(u8, p); p += 4;
+  if (!(chCount >= 1) || chCount > 500000) throw new Error("bad-chunks");
+  const chunks = new Array(chCount);
+  for (let i = 0; i < chCount; i++) {
+    if (wide) {
+      if (p + 8 > coBox.cend) throw new Error("bad-co64");
+      chunks[i] = mp4U64(u8, p); p += 8;
+    } else {
+      if (p + 4 > coBox.cend) throw new Error("bad-stco");
+      chunks[i] = mp4U32(u8, p); p += 4;
+    }
+    if (!(chunks[i] >= 0) || chunks[i] >= len) throw new Error("bad-offset");
+  }
+
+  // Gather frames in chunk order.
+  const frames = [];
+  let total = 0;
+  let si = 0;
+  let mi = 0;
+  for (let ci = 0; ci < chCount && si < sampleCount; ci++) {
+    const chunkNo = ci + 1;
+    while (mi + 1 < map.length && map[mi + 1].first <= chunkNo) mi++;
+    const spc = map[mi].spc;
+    let pos = chunks[ci];
+    for (let s = 0; s < spc && si < sampleCount; s++, si++) {
+      const sz = uniSize !== 0 ? uniSize : sizes[si];
+      if (!(pos >= 0) || pos + sz > len) throw new Error("bad-sample");
+      if (sz + 7 > 8191) throw new Error("frame-too-big");
+      frames.push({ off: pos, size: sz });
+      total += sz + 7;
+      if (total > 120 * 1024 * 1024) throw new Error("too-big");
+      pos += sz;
+    }
+  }
+  if (!frames.length) throw new Error("no-frames");
+
+  // Wrap each raw AAC frame with an ADTS header.
+  const out = new Uint8Array(total);
+  let w = 0;
+  for (const f of frames) {
+    const h = mp4AdtsHeader(par.profile, par.freqIdx, par.chanCfg, f.size + 7);
+    out.set(h, w); w += 7;
+    out.set(u8.subarray(f.off, f.off + f.size), w); w += f.size;
+  }
+  return { bytes: out, frames: frames.length, rate: par.rate };
+}
+/* ===== end audio-pure ===== */
+
+/* Fallback: native decode -> 16-bit PCM WAV. Fast C++ decode, trivial wrap. */
+async function decodeToWav(ab) {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) throw new Error("no-audio");
+  const ctx = new AC();
   try {
-    const end = enc.flush();
-    if (end && end.length) out.push(new Uint8Array(end.buffer, end.byteOffset, end.length));
-  } catch {}
-  return out;
+    const buf = await ctx.decodeAudioData(ab.slice(0));
+    const ch = Math.min(buf.numberOfChannels || 1, 2);
+    const sr = buf.sampleRate || 44100;
+    const n = buf.length;
+    if (!n) throw new Error("empty-decode");
+    const L = buf.getChannelData(0);
+    const R = ch > 1 ? buf.getChannelData(1) : null;
+    const data = new Uint8Array(44 + n * 2 * ch);
+    const dv = new DataView(data.buffer);
+    const wstr = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+    wstr(0, "RIFF");
+    dv.setUint32(4, 36 + n * 2 * ch, true);
+    wstr(8, "WAVE");
+    wstr(12, "fmt ");
+    dv.setUint32(16, 16, true);
+    dv.setUint16(20, 1, true);
+    dv.setUint16(22, ch, true);
+    dv.setUint32(24, sr, true);
+    dv.setUint32(28, sr * ch * 2, true);
+    dv.setUint16(32, ch * 2, true);
+    dv.setUint16(34, 16, true);
+    wstr(36, "data");
+    dv.setUint32(40, n * 2 * ch, true);
+    let o = 44;
+    for (let i = 0; i < n; i++) {
+      const a = Math.max(-1, Math.min(1, L[i] || 0));
+      dv.setInt16(o, a < 0 ? a * 0x8000 : a * 0x7fff, true); o += 2;
+      if (R) {
+        const b = Math.max(-1, Math.min(1, R[i] || 0));
+        dv.setInt16(o, b < 0 ? b * 0x8000 : b * 0x7fff, true); o += 2;
+      }
+    }
+    return data;
+  } finally {
+    try { await ctx.close(); } catch {}
+  }
 }
 
 function articleMedia(article) {
@@ -764,7 +896,7 @@ function addMenuToPosts() {
   document.querySelectorAll("article").forEach((article) => {
     if (article.querySelector(":scope > .inta-menu-wrap")) return;
     // Upgrade path: remove legacy single buttons.
-    article.querySelectorAll(":scope > .inta-dl, :scope > .inta-mp3, :scope > .inta-copy").forEach((b) => { try { b.remove(); } catch {} });
+    article.querySelectorAll(":scope > .inta-dl, :scope > .inta-copy").forEach((b) => { try { b.remove(); } catch {} });
     try {
       if (getComputedStyle(article).position === "static") article.style.position = "relative";
     } catch {}
@@ -774,7 +906,7 @@ function addMenuToPosts() {
     btn.className = "inta-menu";
     btn.type = "button";
     btn.textContent = "•••";
-    btn.title = "Post actions (Inta-Enhancer)";
+    btn.title = "Post actions (Gramiqo)";
     btn.setAttribute("aria-label", "Post actions");
     swallowToggle(btn);
     const pop = document.createElement("div");
@@ -798,19 +930,19 @@ function addMenuToPosts() {
         if (!media) return toast("No media found in this post");
         if (media.type !== "video") {
           const ext = "jpg";
-          return downloadUrl(media.url, `insta-image-${Date.now()}.${ext}`);
+          return downloadUrl(media.url, `gramiqo-image-${Date.now()}.${ext}`);
         }
         toast("Finding video…");
         const v = article.querySelector("video");
         const r = await resolveDownloadUrl(v);
         if (!r.url) return toast("Video still loading — wait a second");
-        downloadUrl(r.url, `insta-video-${Date.now()}.mp4`);
+        downloadUrl(r.url, `gramiqo-video-${Date.now()}.mp4`);
       }));
       if (article.querySelector("video")) {
-        pop.appendChild(menuRow("music", "Audio MP3", () => {
+        pop.appendChild(menuRow("music", "Save audio", () => {
           const v = article.querySelector("video");
           if (!v) return toast("Video still loading — wait a second");
-          downloadMp3FromElement(v);
+          downloadAudioFromElement(v);
         }));
       }
     }
@@ -841,7 +973,7 @@ function addMenuToPosts() {
 
 /* ---------------- one menu per post (super-simple UI) ----------------
    A single ⋯ button on each article; every action lives in its dropdown:
-   Download, Audio MP3, Copy caption, Copy hashtags, Copy link.
+   Download, Save audio, Copy caption, Copy hashtags, Copy link.
    PC look (adapts to IG light/dark via system colors), mobile system
    underneath. Legacy single buttons are removed on sight (upgrade path). */
 let menuDocBound = false;
@@ -1030,7 +1162,7 @@ function openModal(imgUrl, username) {
     const act = btn.dataset.mact;
     if (act === "close") closeModal();
     if (act === "open") window.open(imgUrl, "_blank", "noopener");
-    if (act === "download") downloadUrl(imgUrl, `insta-pfp-${username}-${Date.now()}.jpg`);
+    if (act === "download") downloadUrl(imgUrl, `gramiqo-pfp-${username}-${Date.now()}.jpg`);
   });
   document.documentElement.appendChild(wrap);
   document.addEventListener("keydown", escClose, { once: true });
@@ -1104,7 +1236,7 @@ function enhanceProfilePage() {
     if (act === "avatar") {
       const avatar = findAvatarImg();
       if (!avatar) return toast("Avatar not found yet — scroll up");
-      downloadUrl(hdUpgrade(pickBestSrc(avatar)), `insta-pfp-${username}-${Date.now()}.jpg`);
+      downloadUrl(hdUpgrade(pickBestSrc(avatar)), `gramiqo-pfp-${username}-${Date.now()}.jpg`);
     }
     if (act === "stats") copyProfileStats(username, profileUrl);
     if (act === "edit") location.href = "https://www.instagram.com/accounts/edit/";
@@ -1139,13 +1271,13 @@ function enhanceEditPage() {
   addInlineCounters();
 }
 
-const INTA_LIMITS = [
+const GRAMI_LIMITS = [
   { max: 150, find: () => findBioField() },
   { max: 30, find: () => findUsernameField() },
 ];
 
 function addInlineCounters() {
-  for (const { max, find } of INTA_LIMITS) {
+  for (const { max, find } of GRAMI_LIMITS) {
     let field = null;
     try {
       field = find();
@@ -1495,7 +1627,7 @@ function openLinksModal() {
         existing.forEach(addRow);
       }
     } catch (err) {
-      console.warn("[Inta-Enhancer] links load failed", err);
+      console.warn("[Gramiqo] links load failed", err);
       setStatus("Couldn't load links (Instagram blocked the read). Reload the page and try again.", true);
       if (rowCount() === 0) addRow(null);
     }
@@ -1567,7 +1699,7 @@ function openLinksModal() {
       toast("Links saved! Reload your profile to see them.");
       closeLinksModal();
     } catch (err) {
-      console.warn("[Inta-Enhancer] links save failed", err);
+      console.warn("[Gramiqo] links save failed", err);
       setStatus(`Save failed: ${String(err?.message || err).slice(0, 160)}`, true);
     } finally {
       saving = false;
@@ -1630,6 +1762,7 @@ function enhanceTopSearch() {
     // desktop) — same sheet the mobile app opens, zero hacks.
     if (btn.dataset.tact === "create") {
       try {
+        if (typeof window.GramiqoOpenCreate === "function" && window.GramiqoOpenCreate() !== false) return;
         if (typeof window.IntaOpenCreate === "function" && window.IntaOpenCreate() !== false) return;
       } catch {}
       toast("Tap ＋ Create in the left menu");
@@ -1638,6 +1771,10 @@ function enhanceTopSearch() {
     // Open IG's OWN search drawer — never navigate to /search or
     // /explore/search/ (those are dead ends on desktop).
     try {
+      if (typeof window.GramiqoOpenSearch === "function") {
+        const ok = window.GramiqoOpenSearch("");
+        if (ok !== false) return;
+      }
       if (typeof window.IntaOpenSearch === "function") {
         const ok = window.IntaOpenSearch("");
         if (ok !== false) return;
@@ -1669,7 +1806,7 @@ function enhanceReelsPage() {
         if (!inArticle) w.remove(); // reels-holder menu from older builds
       } catch {}
     });
-    document.querySelectorAll(".inta-reel-dl, .inta-reel-mp3").forEach((b) => {
+    document.querySelectorAll(".inta-reel-dl").forEach((b) => {
       try { b.remove(); } catch {}
     });
     document.querySelectorAll(".inta-lefty").forEach((el) => {
@@ -1712,7 +1849,7 @@ function updateFloatingReelMenu() {
       btn.className = "inta-menu";
       btn.type = "button";
       btn.textContent = "•••";
-      btn.title = "Reel actions (Inta-Enhancer)";
+      btn.title = "Reel actions (Gramiqo)";
       btn.setAttribute("aria-label", "Reel actions");
       swallowToggle(btn);
       const pop = document.createElement("div");
@@ -1736,12 +1873,12 @@ function updateFloatingReelMenu() {
         const v = currentReelVideo();
         const r = await resolveDownloadUrl(v);
         if (!r.url) return toast("Video still loading — wait a second");
-        downloadUrl(r.url, `insta-reel-${Date.now()}.mp4`);
+        downloadUrl(r.url, `gramiqo-reel-${Date.now()}.mp4`);
       }));
-      pop.appendChild(menuRow("music", "Audio MP3", () => {
+      pop.appendChild(menuRow("music", "Save audio", () => {
         const v = currentReelVideo();
         if (!v) return toast("Video still loading — wait a second");
-        downloadMp3FromElement(v);
+        downloadAudioFromElement(v);
       }));
       pop.appendChild(menuRow("link", "Copy link", () => {
         copyText(location.href, "Reel link copied!");

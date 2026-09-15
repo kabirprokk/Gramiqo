@@ -1,11 +1,11 @@
 /* ============================================================
-   Inta-Enhancer - icons.js (OLIN 1.1.b)
+   Gramiqo - icons.js (OLIN 1.1.b)
    Professional inline-SVG icon set. Self-contained: zero network
    requests (external images would violate Instagram's CSP), inherits
    surrounding text color, stroke-based like Instagram's own glyphs.
    Loaded FIRST in manifest so content/search/power can use it.
    ============================================================ */
-window.IntaIcons = (() => {
+window.GramiqoIcons = (() => {
 "use strict";
 
 const PATHS = {
@@ -49,3 +49,5 @@ function svg(name, size) {
 
 return { svg, names: Object.keys(PATHS) };
 })();
+// Backward-compat alias (older content scripts referenced IntaIcons).
+try { window.IntaIcons = window.GramiqoIcons; } catch {}

@@ -1,16 +1,16 @@
-# Inta-Enhancer
+# Gramiqo
 
-Mobile Instagram features for PC web. A Manifest V3 Chrome extension (works in Chrome, Edge, Brave) that brings the phone experience to `instagram.com`: **Search with Meta AI**, downloads, **320kbps MP3 audio**, story tools, reels toolkit, HD pics, bio-links + Notes editors, settings hub, and a deep mobile-illusion stack.
+Mobile Instagram features for PC web. A Manifest V3 Chrome extension (works in Chrome, Edge, Brave) that brings the phone experience to `instagram.com`: **Search with Meta AI**, downloads, **one-tap audio extraction**, story tools, reels toolkit, HD pics, bio-links + Notes editors, settings hub, and a deep mobile-illusion stack.
 
 **Version:** 1.1.2 · **OLIN:** 1.1.b
 *(OLIN names climb `1.1.a → … → 1.1.k → 1.2.a …` — the display name for each production stage.)*
 
 🌐 **Website:** open [`website/index.html`](website/index.html) — features, install guide, FAQ, [bug report page](website/bug.html).
-🐞 **Found a bug?** [Report it here](https://github.com/kabirprokk/insta-enhancer/issues/new) or via the website's bug page (opens a pre-filled issue).
+🐞 **Found a bug?** [Report it here](https://github.com/kabirprokk/Gramiqo/issues/new) or via the website's bug page (opens a pre-filled issue).
 
 ## Install (60 seconds, free)
 
-1. **Download:** [direct ZIP](https://github.com/kabirprokk/insta-enhancer/archive/refs/heads/main.zip) (or `git clone https://github.com/kabirprokk/insta-enhancer.git`), unzip.
+1. **Download:** [direct ZIP](https://github.com/kabirprokk/Gramiqo/archive/refs/heads/main.zip) (or `git clone https://github.com/kabirprokk/Gramiqo.git`), unzip.
 2. Open `chrome://extensions` → enable **Developer mode** (top-right).
 3. **Load unpacked** → select the repo folder (the one containing `manifest.json`).
 4. Open `instagram.com`, log in, reload once. Click the toolbar icon to toggle features.
@@ -23,7 +23,7 @@ Updating: pull/ZIP again → `chrome://extensions` → ⟳ Reload → `Ctrl+Shif
 |---|---|
 | Search with Meta AI | Keyword-first (default) + For-you answer card + follow-up box, pins, recents, places, Keyword/Accounts/Reels/Audio/Tags tabs, keyboard nav (`/`, `↓`) |
 | Downloads | Per-post/reel buttons, story saver, bulk grid saver (up to 12), HD avatars |
-| MP3 audio | Music-note button under every video → 320kbps MP3, captured on-device, nothing leaves the browser |
+| Audio | One-tap audio button on every video → original-quality AAC split out on-device in milliseconds (WAV fallback), nothing leaves the browser |
 | Reels toolkit | Speed 1×–2×, loop, mute, auto-next; auto-unmute; click-to-open reel view; explore reels open full-screen |
 | Profiles | HD pic modal, copy link/avatar/stats, growth tracker, inline edit counters, desktop bio-links editor |
 | Notes | Read / post (60 chars, audience picker) / delete your DM note from PC |
@@ -53,10 +53,9 @@ No backend, no analytics, no tracking. Your login stays in Instagram's own cooki
 ```
 manifest.json      MV3 manifest (1.1.2 / OLIN 1.1.b)
 icons.js           inline-SVG icon set (zero network requests, CSP-safe)
-vendor/lame.min.js MP3 encoder (vendored, runs fully offline)
-background.js      downloads queue + mobile-illusion network rules + spoof registration
+background.js      downloads queue + fetch relay + mobile-illusion network rules + spoof registration
 spoof.js           page-world navigator/iPhone spoof (document_start, toggle-gated)
-content.js         posts, profiles, links editor, MP3 capture, composer entry
+content.js         posts, profiles, links editor, instant audio extraction, composer entry
 search.js          Meta-AI search panel, tabs, pins, places
 power.js           story saver, reels toolkit, palette, hub, notes, stats, studio
 popup.*            toolbar popup (all toggles)

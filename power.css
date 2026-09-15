@@ -1,4 +1,4 @@
-/* Inta-Enhancer power pack (OLIN 1.1.a) — IG-native styling.
+/* Gramiqo power pack (OLIN 1.1.b) — IG-native styling.
    Icons are inline SVG (icons.js): inherit text color, sized per slot. */
 .inta-story-dl { display: inline-flex !important; align-items: center !important; gap: 6px !important; }
 .inta-story-dl .inta-ic-svg { width: 15px !important; height: 15px !important; }
@@ -44,12 +44,12 @@
 }
 .inta-reel-bar button.on { background: #0095F6 !important; }
 
-/* hashtag button on posts (article stack: dl 10 / copy 54 / mp3 98) */
+/* hashtag button on posts (article stack: dl 10 / copy 54 / tags 98) */
 .inta-tags {
   position: absolute !important;
   z-index: 50000 !important;
   width: 36px !important; height: 36px !important;
-  top: 142px !important; right: 10px !important;
+  top: 98px !important; right: 10px !important;
   border-radius: 50% !important; border: none !important;
   background: rgba(0,0,0,.7) !important; color: #fff !important;
   font-size: 16px !important; cursor: pointer !important;
@@ -57,12 +57,12 @@
 }
 .inta-tags:hover { background: #0095F6 !important; }
 
-/* per-post link copy (5th in the article stack) */
+/* per-post link copy (4th in the article stack) */
 .inta-linkcopy {
   position: absolute !important;
   z-index: 50000 !important;
   width: 36px !important; height: 36px !important;
-  top: 186px !important; right: 10px !important;
+  top: 142px !important; right: 10px !important;
   border-radius: 50% !important; border: none !important;
   background: rgba(0,0,0,.7) !important; color: #fff !important;
   font-size: 15px !important; cursor: pointer !important;

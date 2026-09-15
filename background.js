@@ -1,4 +1,4 @@
-// background.js - downloads + Mobile-Mode (UA spoof)
+// background.js - Gramiqo downloads + Mobile-Mode (UA spoof)
 // Production-level: guarded, no throw, MV3 service-worker safe.
 
 const RULE_ID = 1001;
@@ -13,7 +13,7 @@ let dlActive = false;
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg) return false;
-  if (msg.type === "INTA_GET_MEDIA") {
+  if (msg.type === "GRAMI_GET_MEDIA" || msg.type === "INTA_GET_MEDIA") {
     // Newest direct video file seen on this tab (beats blob:/protected URLs).
     try {
       const arr = mediaByTab.get(sender?.tab?.id) || [];
@@ -24,14 +24,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     return false;
   }
-  if (msg.type === "INTA_DOWNLOAD") {
+  if (msg.type === "GRAMI_DOWNLOAD" || msg.type === "INTA_DOWNLOAD") {
     queueDownload(msg.url, msg.filename).then(
       () => sendResponse({ ok: true }),
       (err) => sendResponse({ ok: false, error: String((err && err.message) || err) })
     );
     return true; // async response
   }
-  if (msg.type === "INTA_DOWNLOAD_MANY") {
+  if (msg.type === "GRAMI_DOWNLOAD_MANY" || msg.type === "INTA_DOWNLOAD_MANY") {
     const items = Array.isArray(msg.items) ? msg.items.slice(0, 20) : [];
     (async () => {
       let ok = 0, fail = 0;
@@ -40,6 +40,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         catch { fail++; }
       }
       sendResponse({ ok: true, downloaded: ok, failed: fail });
+    })();
+    return true;
+  }
+  if (msg.type === "GRAMI_FETCH_BYTES") {
+    // Audio path: fetch the direct .mp4 from the worker (extension origin +
+    // host permissions), so page-context CORS can never block extraction.
+    // CDN links are signed query URLs — no page cookies needed.
+    (async () => {
+      try {
+        const u = String(msg.url || "");
+        if (!/^https?:\/\//.test(u)) throw new Error("bad-url");
+        const res = await fetch(u);
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const buf = await res.arrayBuffer();
+        if (!buf || !buf.byteLength) throw new Error("empty-file");
+        if (buf.byteLength > 120 * 1024 * 1024) throw new Error("too-big");
+        sendResponse({ ok: true, buf: buf });
+      } catch (e) {
+        sendResponse({ ok: false, error: String((e && e.message) || e) });
+      }
     })();
     return true;
   }
@@ -66,7 +86,7 @@ function pumpQueue() {
     return;
   }
   const filename = sanitizeFilename(
-    job.filename || `inta-enhancer-${Date.now()}.${guessExt(url)}`
+    job.filename || `gramiqo-${Date.now()}.${guessExt(url)}`
   );
   chrome.downloads
     .download({ url, filename, saveAs: false, conflictAction: "uniquify" })
@@ -126,7 +146,7 @@ try {
     });
   }
 } catch (e) {
-  console.warn("[Inta-Enhancer] media memory unavailable", e);
+  console.warn("[Gramiqo] media memory unavailable", e);
 }
 try {
   chrome.tabs?.onRemoved?.addListener((tabId) => {
@@ -199,7 +219,7 @@ async function applyMobileMode() {
             ],
           });
         } catch (e) {
-          console.warn("[Inta-Enhancer] client-hints rule skipped", e);
+          console.warn("[Gramiqo] client-hints rule skipped", e);
         }
       } else {
         await chrome.declarativeNetRequest.updateDynamicRules({
@@ -209,7 +229,7 @@ async function applyMobileMode() {
     }
     await applySpoofScript(on);
   } catch (e) {
-    console.warn("[Inta-Enhancer] mobile-mode rule failed", e);
+    console.warn("[Gramiqo] mobile-mode rule failed", e);
   }
 }
 
@@ -238,7 +258,7 @@ async function applySpoofScript(on) {
       await api.unregisterContentScripts({ ids: [SPOOF_ID] });
     }
   } catch (e) {
-    console.warn("[Inta-Enhancer] spoof script sync failed", e);
+    console.warn("[Gramiqo] spoof script sync failed", e);
   }
 }
 
@@ -266,7 +286,7 @@ async function migrateMobileDefault() {
       try { await chrome.storage.sync.set({ intaMigrated113: true }); } catch {}
     }
   } catch (e) {
-    console.warn("[Inta-Enhancer] migration check failed", e);
+    console.warn("[Gramiqo] migration check failed", e);
   }
 }
 

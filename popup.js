@@ -31,7 +31,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   try {
     stored = await chrome.storage.sync.get(DEFAULTS);
   } catch (e) {
-    console.warn("[Inta-Enhancer] storage unavailable", e);
+    console.warn("[Gramiqo] storage unavailable", e);
   }
   for (const key in DEFAULTS) {
     const box = document.getElementById(key);
@@ -52,7 +52,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tab?.id != null && (tab.url || "").includes("instagram.com")) {
-        chrome.tabs.sendMessage(tab.id, { type: "INTA_OPEN_SETTINGS" });
+        chrome.tabs.sendMessage(tab.id, { type: "GRAMI_OPEN_SETTINGS" });
       } else {
         chrome.tabs.create({ url: "https://www.instagram.com/" });
       }
@@ -71,7 +71,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
       let res = null;
       try {
-        res = await chrome.tabs.sendMessage(tab.id, { type: "INTA_GET_DIAG" });
+        res = await chrome.tabs.sendMessage(tab.id, { type: "GRAMI_GET_DIAG" });
       } catch (e) {
         say("No answer — reload the extension + hard-refresh IG (Ctrl+Shift+R).");
         return;
@@ -80,7 +80,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         say("Empty answer — hard-refresh the IG tab and retry.");
         return;
       }
-      const text = "INTA-DIAG " + JSON.stringify(res.diag);
+      const text = "GRAMI-DIAG " + JSON.stringify(res.diag);
       try {
         await navigator.clipboard.writeText(text);
         say(`Copied! Paste it here (grid=${res.diag.counts?.grid ?? "?"}).`);
@@ -95,7 +95,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // causing a blank IG page even after reinstall — sync storage survives
   // reinstalls). Defaults are desktop-safe, then IG tabs reload.
   document.getElementById("resetAll")?.addEventListener("click", async () => {
-    if (!confirm("Reset all Inta-Enhancer settings to defaults?")) return;
+    if (!confirm("Reset all Gramiqo settings to defaults?")) return;
     try { await chrome.storage.sync.clear(); } catch {}
     try { await chrome.storage.local.clear(); } catch {}
     try {
