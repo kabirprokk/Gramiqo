@@ -38,7 +38,7 @@ let searchSeq = 0;
 // One-click diagnostics: every network surface records its outcome here
 // (surface, HTTP/error, ms, result size). Popup "Copy diagnostics" sends
 // INTA_GET_DIAG and pastes this — no DevTools needed to debug search.
-const INTA_VER = "1.1.9 (OLIN 1.1.k)";
+const INTA_VER = "1.2.0 (OLIN 1.2.a)";
 const diagFetches = [];
 function diagRec(surface, ok, info) {
   try {
@@ -908,54 +908,95 @@ async function fetchText(url, signal, label) {
 // dead-end route.
 function popularPageUrl(clean, noSpace) {
   try {
-    const slugs = popularSlugs(clean);
+    const slugs = popularCandidates(clean);
     const slug = slugs[0] || String(noSpace || "").toLowerCase().replace(/[^a-z0-9-]/g, "");
     if (!slug) return null;
     return "/popular/" + encodeURIComponent(slug) + "/";
   } catch { return null; }
 }
-function popularSlugs(query) {
+/* Slug candidates, ordered cheapest-first: exact hyphenated/glued, then
+   word-order permutations (Instagram owns the order: "diwali corporate
+   gift" lives at /popular/diwali-gift-corporate/), then single words
+   longest-first. Callers stop at the first slug that yields reels. */
+function popularCandidates(query) {
   try {
-    const norm = String(query || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
-    if (!norm) return [];
-    const first = norm.split(" ")[0];
-    return [...new Set([
-      norm.replace(/\s+/g, "-"),
-      norm.replace(/\s+/g, ""),
-      first,
-    ])].filter((s) => s.length >= 2).slice(0, 3);
+    const words = String(query || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim().split(" ").filter((w) => w.length >= 2);
+    if (!words.length) return [];
+    const out = [];
+    const push = (s) => { if (s && s.length >= 2 && !out.includes(s) && out.length < 8) out.push(s); };
+    push(words.join("-"));
+    push(words.join(""));
+    if (words.length >= 2 && words.length <= 3) {
+      for (const p of permute(words)) {
+        push(p.join("-"));
+        if (out.length >= 6) break;
+      }
+    }
+    push(words[0]);
+    [...words].sort((a, b) => b.length - a.length).forEach(push);
+    return out;
   } catch { return []; }
 }
+function permute(arr) {
+  // All orders except the original (already tried). Capped by caller.
+  const res = [];
+  try {
+    const used = new Array(arr.length).fill(false);
+    const cur = [];
+    const walk = () => {
+      if (cur.length === arr.length) {
+        if (cur.join("-") !== arr.join("-")) res.push([...cur]);
+        return;
+      }
+      for (let i = 0; i < arr.length; i++) {
+        if (used[i]) continue;
+        used[i] = true;
+        cur.push(arr[i]);
+        walk();
+        cur.pop();
+        used[i] = false;
+      }
+    };
+    walk();
+  } catch {}
+  return res;
+}
 async function fetchPopularAll(query, signal, cap = 18) {
+  // Sequential, cheapest slug first, stops at a full pool. Returns the
+  // items AND the first slug that actually yielded reels — only verified
+  // slugs are ever used for redirects, so clicks can never land on a
+  // "No results" page again.
   const out = [];
   const seen = new Set();
+  let goodSlug = null;
   try {
-    const slugs = popularSlugs(query);
-    if (!slugs.length) return out;
-    const pages = await Promise.all(slugs.map((slug) =>
-      fetchText("https://www.instagram.com/popular/" + encodeURIComponent(slug) + "/", signal, "popular/" + slug)
-        .then((html) => ({ slug, html }))
-        .catch(() => null)
-    ));
-    for (const pg of pages) {
-      if (!pg) continue;
-      if (!pg.html || pg.html.length < 5000) {
-        diagRec("popular/parse", false, `${pg.slug || "?"} html=${(pg.html || "").length}b skipped`);
+    const slugs = popularCandidates(query);
+    if (!slugs.length) return { items: out, slug: null };
+    for (const slug of slugs) {
+      if (out.length >= cap || (signal && signal.aborted)) break;
+      let html = "";
+      try {
+        html = await fetchText("https://www.instagram.com/popular/" + encodeURIComponent(slug) + "/", signal, "popular/" + slug);
+      } catch { continue; }
+      if (!html || html.length < 5000) {
+        diagRec("popular/parse", false, `${slug} html=${(html || "").length}b skipped`);
         continue;
       }
-      if (signal && signal.aborted) break;
       const before = out.length;
-      parsePopularJson(pg.html, seen, out);
-      parsePopularAnchors(pg.html, seen, out);
-      diagRec("popular/parse", out.length > before, `${pg.slug} +${out.length - before} reels (html=${pg.html.length}b)`);
-      if (out.length >= cap) break;
+      parsePopularJson(html, seen, out);
+      parsePopularAnchors(html, seen, out);
+      if (!goodSlug && out.length > before) goodSlug = slug;
+      diagRec("popular/parse", out.length > before, `${slug} +${out.length - before} reels (html=${html.length}b)`);
     }
   } catch {}
-  return out.slice(0, cap);
+  return { items: out.slice(0, cap), slug: goodSlug };
 }
 async function fetchPopularReels(query, signal) {
   // Back-compat single-batch wrapper (kept for old callers).
-  return fetchPopularAll(query, signal, 9);
+  try {
+    const r = await fetchPopularAll(query, signal, 9);
+    return r.items;
+  } catch { return []; }
 }
 function cleanThumb(u) {
   try {
@@ -1315,7 +1356,7 @@ async function runSearch(q) {
   aborter = new AbortController();
   const { signal } = aborter;
   if (!q) {
-    lastData = { users: [], hashtags: [], places: [], posts: [], clips: [], grid: [], reelSource: null, related: [], suggests: [], tracks: [], serpLive: false, _blocked: false };
+    lastData = { users: [], hashtags: [], places: [], posts: [], clips: [], grid: [], reelSource: null, popSlug: null, related: [], suggests: [], tracks: [], serpLive: false, _blocked: false };
     renderIntoNative();
     return;
   }
@@ -1338,7 +1379,7 @@ async function runSearch(q) {
       fetchReelsSerp(q, signal).catch(() => null),
       fetchKeywordSuggest(q, signal).catch(() => null),
       fetchAudioSerp(q, signal).catch(() => null),
-      fetchPopularAll(q, signal, 18).catch(() => []),
+      fetchPopularAll(q, signal, 18).catch(() => ({ items: [], slug: null })),
     ]);
     if (mySeq !== searchSeq || signal.aborted) return;
     const legacyUsers = Array.isArray(data?.users) ? data.users : [];
@@ -1383,7 +1424,9 @@ async function runSearch(q) {
       seenC.add(c.code);
       grid.push(c);
     };
-    for (const c of popular || []) pushC(norm(c, "reel", "/reel/"));
+    const popItems = Array.isArray(popular?.items) ? popular.items : [];
+    const popSlug = popular?.slug || null; // verified: yielded reels
+    for (const c of popItems || []) pushC(norm(c, "reel", "/reel/"));
     for (const c of extractSerpMedia(topSerp, 12)) pushC(norm(c, "post", "/p/"));
     for (const c of extractSerpMedia(reelSerp, 9)) pushC(norm(c, "reel", "/reel/"));
     for (const c of tagClips || []) pushC(norm(c, "reel", "/reel/"));
@@ -1391,18 +1434,18 @@ async function runSearch(q) {
     const clips = (reelsOnly.length ? reelsOnly : grid).slice(0, 9);
     const posts = grid.filter((c) => c.kind === "post").slice(0, 12);
     let reelSource = null;
-    if ((popular || []).length) reelSource = "popular";
+    if (popItems.length) reelSource = "popular";
     else if (extractSerpMedia(reelSerp, 1).length) reelSource = "serp";
     else if (tagClips.length) reelSource = "tags";
     lastData = {
       users, hashtags,
       places: Array.isArray(data?.places) ? data.places : [],
-      posts, clips, grid: grid.slice(0, 18), reelSource,
+      posts, clips, grid: grid.slice(0, 18), reelSource, popSlug,
       related: topTags,
       suggests: collectSuggests(suggestSerp, q, 6),
       tracks: extractTracks(audioSerp, 5),
-      serpLive: !!((popular || []).length || topSerp || accSerp || reelSerp),
-      _blocked: !data && !topSerp && !accSerp && !(popular || []).length,
+      serpLive: !!(popItems.length || topSerp || accSerp || reelSerp),
+      _blocked: !data && !topSerp && !accSerp && !popItems.length,
     };
     cacheSet(q, lastData);
     saveRecent(q);
@@ -1411,7 +1454,7 @@ async function runSearch(q) {
   } catch (err) {
     if (err?.name === "AbortError") return;
     diagRec("runSearch:" + String(q).slice(0, 40), false, String((err && err.message) || err).slice(0, 80));
-    lastData = { users: [], hashtags: [], places: [], posts: [], clips: [], grid: [], reelSource: null, related: [], suggests: [], tracks: [], serpLive: false, _blocked: true };
+    lastData = { users: [], hashtags: [], places: [], posts: [], clips: [], grid: [], reelSource: null, popSlug: null, related: [], suggests: [], tracks: [], serpLive: false, _blocked: true };
   }
   if (mySeq === searchSeq) renderIntoNative();
 }
@@ -1475,7 +1518,10 @@ function renderIntoNative() {
   const clean = q.replace(/^[@#]/, "").trim();
   const noSpace = clean.replace(/\s+/g, "");
   const tagUrl = noSpace ? "/explore/tags/" + encodeURIComponent(noSpace) + "/" : null;
-  const keywordUrl = popularPageUrl(clean, noSpace);
+  // Redirects use the VERIFIED slug (a page proven to hold reels) — never a
+  // blind guess, so clicks can't land on "No results" again.
+  const verified = lastData.popSlug ? "/popular/" + encodeURIComponent(lastData.popSlug) + "/" : null;
+  const keywordUrl = verified || popularPageUrl(clean, noSpace);
 
   let html = "";
   if (teenFilterActive() && q)
@@ -1635,13 +1681,14 @@ function audioSection(clean, noSpace) {
   // the app uses), reels + popular page as fallback. Every row lands on a
   // real page: tracks open their own Popular page (or the topic's page).
   const tracks = Array.isArray(lastData.tracks) ? lastData.tracks : [];
-  const topicUrl = popularPageUrl(clean, noSpace);
+  const verifiedTopic = lastData.popSlug ? "/popular/" + encodeURIComponent(lastData.popSlug) + "/" : null;
+  const topicUrl = verifiedTopic || popularPageUrl(clean, noSpace);
   const audioUrl = popularPageUrl((clean || "") + " audio", noSpace ? noSpace + "audio" : "") || topicUrl;
   let html = `<div class="inta-sec">Audio</div>`;
   if (tracks.length) {
     html += tracks.map((t) => {
-      const slug = popularSlugs((t.title || "") + " " + (t.artist || ""))[0];
-      const href = slug ? "/popular/" + encodeURIComponent(slug) + "/" : (topicUrl || "#");
+      const slug = popularCandidates((t.title || "") + " " + (t.artist || ""))[0];
+      const href = verifiedTopic || (slug ? "/popular/" + encodeURIComponent(slug) + "/" : "#");
       return `<a class="inta-row" href="${href}">`
       + `<span class="inta-ic">${ic("music", 20)}</span>`
       + `<span class="inta-txt"><span class="inta-t1">${esc(t.title || "Audio")}</span>`
