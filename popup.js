@@ -3,6 +3,7 @@ const DEFAULTS = {
   mobileMode: true, // ON: Instagram feels like mobile (UA + narrow frame)
   profileTools: true,
   enhancedSearch: true,
+  keywordSearch: true,
   downloadBtn: true,
   hdPfp: true,
   copyCaption: true,

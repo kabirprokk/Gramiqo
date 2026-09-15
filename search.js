@@ -23,11 +23,12 @@ const ic = (n, s) => {
 const APP_ID = "936619743392459";
 const FETCH_TIMEOUT_MS = 9000;
 
-let activeTab = "foryou";
+let activeTab = "keyword";
 let lastQuery = "";
 let lastData = { users: [], hashtags: [], places: [], clips: [], related: [], _blocked: false };
 let debounce = null;
 let enabled = true;
+let keywordFirst = true;
 let boundInputs = new WeakSet();
 let currentScope = null;
 let enhanceTimer = null;
@@ -38,8 +39,10 @@ init().catch(() => {});
 
 async function init() {
   try {
-    const s = await chrome.storage.sync.get({ enhancedSearch: true });
+    const s = await chrome.storage.sync.get({ enhancedSearch: true, keywordSearch: true });
     enabled = s.enhancedSearch !== false;
+    keywordFirst = s.keywordSearch !== false;
+    activeTab = keywordFirst ? "keyword" : "foryou";
   } catch {}
   try {
     chrome.storage.onChanged.addListener((c, area) => {
@@ -47,6 +50,13 @@ async function init() {
         enabled = c.enhancedSearch.newValue !== false;
         if (!enabled) cleanup();
         else queueEnhance(0);
+      }
+      if (area === "sync" && c.keywordSearch) {
+        keywordFirst = c.keywordSearch.newValue !== false;
+        // If user is on foryou/tags and flips the switch, jump to keyword.
+        if (keywordFirst && (activeTab === "foryou" || activeTab === "tags")) activeTab = "keyword";
+        syncActiveTab();
+        renderIntoNative();
       }
     });
   } catch {}
@@ -165,7 +175,7 @@ function openOverlay(preset) {
             <span class="inta-ov-title">${ic("spark", 16)}<span>Search</span></span>
             <button type="button" class="inta-ov-x" data-ov-close="1" aria-label="Close">${ic("x", 14)}</button>
           </div>
-          <input id="inta-ov-input" type="text" placeholder="Search accounts, tags, reels…" autocomplete="off" />
+          <input id="inta-ov-input" type="text" placeholder="Search by keyword — accounts, posts, reels…" autocomplete="off" />
           <div id="inta-ov-tabs"></div>
           <div id="inta-ov-results" class="inta-results"></div>
         </div>`;
@@ -383,20 +393,27 @@ function enhanceNative() {
   // Reposition on EVERY enhance: Instagram re-renders native results above/
   // below us on each keystroke — without this we drift to the bottom
   // (the bug in the screenshot: our box under all native rows, full width).
+  // FIX: never return invisible — if the header row can't be found (IG
+  // renamed markup), anchor to the top of the scope so the panel ALWAYS shows.
   const header = findHeaderBlock(scope, input);
-  if (!header) return;
   if (!wrap || !wrap.isConnected) {
     wrap = document.createElement("div");
     wrap.id = "inta-wrap";
     wrap.setAttribute("data-inta", "1");
-    header.after(wrap);
-  } else if (wrap.previousElementSibling !== header) {
+    try {
+      if (header) header.after(wrap);
+      else if (scope.prepend) scope.prepend(wrap);
+      else scope.appendChild(wrap);
+    } catch { try { scope.appendChild(wrap); } catch {} }
+  } else if (header && wrap.previousElementSibling !== header) {
     header.after(wrap); // move back directly below the search bar
+  } else if (!header && wrap.parentElement !== scope) {
+    try { if (scope.prepend) scope.prepend(wrap); } catch {}
   }
   // Align width with the search column (not full page): match the header
   // width so our tabs/cards line up with IG's own result rows.
   try {
-    const w = Math.min(header.offsetWidth || 0, 800);
+    const w = Math.min((header || scope).offsetWidth || 0, 800);
     if (w >= 280) {
       wrap.style.maxWidth = w + "px";
       wrap.style.marginLeft = "auto";
@@ -404,6 +421,13 @@ function enhanceNative() {
     }
   } catch {}
 
+  // Self-heal: older DOM from a previous version has no Keyword tab.
+  if (!wrap.querySelector('#inta-tabs [data-tab="keyword"]')) {
+    wrap.querySelector("#inta-tabs")?.remove();
+  }
+  // Guard against stale tab values from older versions.
+  const knownTabs = ["keyword", "foryou", "accounts", "reels", "audio", "tags"];
+  if (!knownTabs.includes(activeTab)) activeTab = keywordFirst ? "keyword" : "foryou";
   if (!wrap.querySelector("#inta-tabs")) wrap.appendChild(buildTabs());
   else syncActiveTab();
   if (!wrap.querySelector("#inta-native-results")) {
@@ -421,6 +445,7 @@ function buildTabs() {
   tabs.id = "inta-tabs";
   tabs.setAttribute("role", "tablist");
   const defs = [
+    ["keyword", "Keyword"],
     ["foryou", "For you"],
     ["accounts", "Accounts"],
     ["reels", "Reels"],
@@ -465,7 +490,7 @@ function updateTabCounts() {
     const u = (lastData.users || []).length;
     const h = (lastData.hashtags || []).length;
     document.querySelectorAll("#inta-tabs button").forEach((b) => {
-      const base = { foryou: "For you", accounts: "Accounts", reels: "Reels", audio: "Audio", tags: "Tags" }[b.dataset.tab] || b.dataset.tab;
+      const base = { keyword: "Keyword", foryou: "For you", accounts: "Accounts", reels: "Reels", audio: "Audio", tags: "Tags" }[b.dataset.tab] || b.dataset.tab;
       if (b.dataset.tab === "accounts" && u > 0 && lastQuery) b.textContent = `${base} (${u > 8 ? "8+" : u})`;
       else if (b.dataset.tab === "tags" && h > 0 && lastQuery) b.textContent = `${base} (${h > 8 ? "8+" : h})`;
       else b.textContent = base;
@@ -862,6 +887,13 @@ async function fetchSuggestedReels(tagNames, signal) {
 
 async function runSearch(q) {
   lastQuery = q;
+  // Keyword-first: every NEW query opens on the Keyword tab (the requested
+  // behavior: "search gives keyword output instead of hashtag output").
+  // Clicking another tab after that still sticks until the next query.
+  if (q && keywordFirst && activeTab !== "keyword") {
+    activeTab = "keyword";
+    try { syncActiveTab(); } catch {}
+  }
   const mySeq = ++searchSeq;
   try {
     aborter?.abort();
@@ -962,6 +994,7 @@ function renderIntoNative() {
   const clean = q.replace(/^[@#]/, "").trim();
   const noSpace = clean.replace(/\s+/g, "");
   const tagUrl = noSpace ? "/explore/tags/" + encodeURIComponent(noSpace) + "/" : null;
+  const keywordUrl = clean ? "/explore/search/?q=" + encodeURIComponent(clean) : null;
 
   let html = "";
   if (teenFilterActive() && q)
@@ -969,9 +1002,12 @@ function renderIntoNative() {
   if (lastData._blocked)
     html += `<div class="inta-warn">Live previews limited — links below always work. <button type="button" class="inta-retry" data-retry="1">Retry</button></div>`;
 
-  if (activeTab === "foryou") {
+  if (activeTab === "keyword") {
+    html += keywordSection(clean, noSpace, tagUrl, keywordUrl);
+  } else if (activeTab === "foryou") {
     const places = placeRows(2);
-    html += aiCard(clean, noSpace, tagUrl) + reelsGrid(false, tagUrl, noSpace) + rowSection("Accounts", accountRows(3, noSpace)) + rowSection("Tags", tagRows(3, tagUrl, noSpace)) + (places ? rowSection("Places", places) : "");
+    // Keyword-first: direct keyword links come before the #tag conversion.
+    html += aiCard(clean, noSpace, tagUrl, keywordUrl) + keywordDirectRows(clean, keywordUrl, tagUrl, noSpace) + reelsGrid(false, tagUrl, noSpace) + rowSection("Accounts", accountRows(3, noSpace)) + rowSection("Tags", tagRows(3, tagUrl, noSpace)) + (places ? rowSection("Places", places) : "");
   }
   else if (activeTab === "accounts") html += rowSection("Accounts", accountRows(8, noSpace));
   else if (activeTab === "reels") html += reelsGrid(true, tagUrl, noSpace) + relatedPills();
@@ -983,7 +1019,7 @@ function renderIntoNative() {
   });
 }
 
-function aiCard(clean, noSpace, tagUrl) {
+function aiCard(clean, noSpace, tagUrl, keywordUrl) {
   // Meta AI default style (like mobile): gradient ring, "Search with Meta AI",
   // conversational summary + Ask box. All data is LIVE from topsearch.
   const u = (lastData.users || []).length;
@@ -1012,6 +1048,7 @@ function aiCard(clean, noSpace, tagUrl) {
   }
 
   const sources = [];
+  if (keywordUrl) sources.push(`<a class="inta-src" href="${keywordUrl}">“${esc(clean)}” keyword</a>`);
   if (topTag && tagUrl) sources.push(`<a class="inta-src" href="${tagUrl}">#${esc(topTag.name)}</a>`);
   (lastData.related || []).slice(1, 3).forEach((t) =>
     sources.push(`<a class="inta-src" href="/explore/tags/${encodeURIComponent(t)}/">#${esc(t)}</a>`));
@@ -1108,6 +1145,106 @@ function placeRows(lim) {
     }
     return `<span class="inta-row">${inner}</span>`;
   }).join("");
+}
+
+/* ---------- KEYWORD-FIRST search (not hashtag-only) ----------
+   Instagram's topsearch API already takes a raw keyword query, but the old
+   UI immediately collapsed "red shoes" -> "#redshoes" and pushed the user
+   to /explore/tags/. Keyword mode keeps the raw words ("red shoes") as the
+   primary result set:
+   - direct keyword rows link to /explore/search/?q=<words> (IG keyword page)
+   - live users/tags/places are re-ranked by keyword-token match, not by
+     who has the closest hashtag name
+   - the #tag grid stays available, but as a secondary row / Tags tab. */
+
+function keywordTokens(clean) {
+  return String(clean || "").toLowerCase().split(/[\s_]+/).map((t) => t.trim()).filter((t) => t.length >= 2);
+}
+
+function keywordScore(hay, tokens) {
+  try {
+    const h = String(hay || "").toLowerCase();
+    if (!h || !tokens.length) return 0;
+    let score = 0;
+    for (const t of tokens) {
+      if (!t) continue;
+      if (h === t) score += 10;
+      else if (h.startsWith(t)) score += 6;
+      else if (h.includes(t)) score += 3;
+    }
+    return score;
+  } catch { return 0; }
+}
+
+function rankByKeyword(list, getText, clean) {
+  try {
+    const tokens = keywordTokens(clean);
+    if (!tokens.length) return list;
+    return [...list].sort((a, b) =>
+      keywordScore(getText(b), tokens) - keywordScore(getText(a), tokens));
+  } catch { return list; }
+}
+
+function keywordDirectRows(clean, keywordUrl, tagUrl, noSpace) {
+  if (!clean) return "";
+  let html = "";
+  if (keywordUrl) {
+    html += `<a class="inta-row" href="${keywordUrl}"><span class="inta-ic">${ic("search", 20)}</span><span class="inta-txt"><span class="inta-t1">“${esc(clean)}” — keyword results</span><span class="inta-t2">posts, reels & accounts matching these words</span></span></a>`;
+  }
+  if (tagUrl && noSpace && noSpace.toLowerCase() !== clean.toLowerCase().replace(/\s+/g, "")) {
+    // Only reached when query had spaces/symbols — kept for reference.
+  }
+  if (tagUrl && noSpace) {
+    html += `<a class="inta-row inta-alt" href="${tagUrl}"><span class="inta-ic">#</span><span class="inta-txt"><span class="inta-t1">#${esc(noSpace)}</span><span class="inta-t2">hashtag grid instead</span></span></a>`;
+  }
+  return html ? `<div class="inta-sec">Keyword</div>` + html : "";
+}
+
+function keywordSection(clean, noSpace, tagUrl, keywordUrl) {
+  const tokens = keywordTokens(clean);
+  const users = rankByKeyword(lastData.users || [], (u) =>
+    ((u?.user?.username || "") + " " + (u?.user?.full_name || "")), clean).slice(0, 5);
+  const tags = rankByKeyword(lastData.hashtags || [], (h) => (h?.hashtag?.name || ""), clean).slice(0, 5);
+
+  // Single clear header with badge — no duplicate "Keyword" sections.
+  let html = `<div class="inta-sec">Keyword — “${esc(clean)}” <span class="inta-kw-badge">words, not #tag</span></div>`;
+  if (keywordUrl) {
+    html += `<a class="inta-row inta-kw-main" href="${keywordUrl}"><span class="inta-ic">${ic("search", 20)}</span><span class="inta-txt"><span class="inta-t1">“${esc(clean)}” — keyword results</span><span class="inta-t2">posts, reels & accounts matching these words</span></span></a>`;
+  }
+
+  const userHtml = users.length ? users.map((u) => {
+    const user = u.user || {};
+    const name = user.username || "?";
+    return `<a class="inta-row" href="/${encodeURIComponent(user.username || "")}/">`
+      + `<span class="inta-ic">${esc(name.charAt(0).toUpperCase())}</span>`
+      + `<span class="inta-txt"><span class="inta-t1">${esc(name)} ${user.is_verified ? '<span class="inta-verified">' + ic("check", 13) + "</span>" : ""}</span>`
+      + `<span class="inta-t2">${esc(user.full_name || "")}</span></span></a>`;
+  }).join("") : `<div class="inta-empty">No account contains all of “${esc(clean)}” — try fewer words.</div>`;
+  html += rowSection(tokens.length > 1 ? "Accounts matching these words" : "Accounts", userHtml);
+
+  if (tags.length) {
+    html += rowSection("Tags containing these words", tags.map((h) => {
+      const t = h.hashtag || {};
+      return `<a class="inta-row" href="/explore/tags/${encodeURIComponent(t.name || "")}/">`
+        + `<span class="inta-ic">#</span>`
+        + `<span class="inta-txt"><span class="inta-t1">#${esc(t.name || "")}</span>`
+        + `<span class="inta-t2">${Number(t.media_count || 0).toLocaleString()} posts</span></span></a>`;
+    }).join(""));
+  }
+  if (tagUrl && noSpace) {
+    html += `<a class="inta-row inta-alt" href="${tagUrl}"><span class="inta-ic">${ic("external", 18)}</span><span class="inta-txt"><span class="inta-t1">#${esc(noSpace)} grid</span><span class="inta-t2">collapsed hashtag version — tap only if you meant the tag</span></span></a>`;
+  }
+  const placeHtml = placeRows(3);
+  if (placeHtml) html += rowSection("Places", placeHtml);
+  if (lastData.clips?.length) {
+    html += `<div class="inta-sec">Reels for these words</div><div class="inta-reel-grid">` + lastData.clips.slice(0, 6).map((c) =>
+      `<a href="/reel/${encodeURIComponent(c.code)}/" class="inta-reel" title="${escAttr(clean)}"><img src="${escAttr(c.thumb)}" loading="lazy" referrerpolicy="no-referrer" draggable="false" alt="" /><span>${ic("play", 10)} ${fmt(c.likes)}</span></a>`
+    ).join("") + `</div>`;
+  }
+  if (keywordUrl) {
+    html += `<a class="inta-row" href="${keywordUrl}"><span class="inta-ic">${ic("play", 20)}</span><span class="inta-txt"><span class="inta-t1">See all keyword results</span><span class="inta-t2">instagram keyword search for “${esc(clean)}”</span></span></a>`;
+  }
+  return html;
 }
 
 function rowSection(title, inner) {

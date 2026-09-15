@@ -234,6 +234,32 @@ button.inta-ask { cursor: pointer !important; font-family: inherit !important; }
   opacity: .8 !important;
 }
 
+/* Keyword-first rows: primary keyword match, secondary hashtag fallback */
+.inta-row.inta-alt { opacity: .75 !important; }
+.inta-kw-badge {
+  display: inline-block !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  text-transform: uppercase !important;
+  letter-spacing: .05em !important;
+  border: 1px solid rgba(0,149,246,.6) !important;
+  color: #0095F6 !important;
+  border-radius: 20px !important;
+  padding: 1px 8px !important;
+  margin-left: 6px !important;
+  vertical-align: 1px !important;
+}
+.inta-row.inta-kw-main {
+  border: 1px solid rgba(0,149,246,.45) !important;
+  border-radius: 10px !important;
+}
+/* Keyword tab stands out as the default */
+#inta-tabs button[data-tab="keyword"].active {
+  border-bottom-color: #0095F6 !important;
+  color: #0095F6 !important;
+  opacity: 1 !important;
+}
+
 .inta-pills {
   display: flex !important;
   gap: 8px !important;
