@@ -49,45 +49,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })();
     return true;
   }
-  if (msg.type === "GRAMI_FETCH_BYTES") {
-    // Audio path: fetch the direct .mp4 from the worker (extension origin +
-    // host permissions), so page-context CORS/CSP can never block extraction.
-    // CDN links are signed query URLs — no page cookies needed. A Referer is
-    // sent because some CDN edges reject referer-less fetches, and DASH
-    // range slices are expanded to the full file (a slice alone is useless).
-    (async () => {
-      try {
-        const u = String(msg.url || "");
-        if (!/^https?:\/\//.test(u)) throw new Error("bad-url");
-        const full = stripRangeParams(u);
-        const res = await fetch(full, {
-          headers: { Referer: "https://www.instagram.com/", Accept: "*/*" },
-        });
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        const buf = await res.arrayBuffer();
-        if (!buf || !buf.byteLength) throw new Error("empty-file");
-        if (buf.byteLength > 120 * 1024 * 1024) throw new Error("too-big");
-        sendResponse({ ok: true, buf: buf });
-      } catch (e) {
-        sendResponse({ ok: false, error: String((e && e.message) || e) });
-      }
-    })();
-    return true;
-  }
   return false;
 });
-
-// Drop DASH range params so a remembered segment URL fetches the full file.
-function stripRangeParams(url) {
-  try {
-    const u = new URL(url);
-    u.searchParams.delete("bytestart");
-    u.searchParams.delete("byteend");
-    return u.toString();
-  } catch {
-    return url;
-  }
-}
 
 function queueDownload(url, filename) {
   return new Promise((resolve, reject) => {
