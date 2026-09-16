@@ -15,13 +15,17 @@
 .inta-links-add .inta-ic-svg { width: 14px !important; height: 14px !important; }
 
 /* Floating reel menu: OUTSIDE the reel frame (viewport bottom-left).
-   Nothing is ever injected into reel holders — zero layout footprint. */
+   Nothing is ever injected into reel holders — zero layout footprint.
+   Lifted well clear of the bottom edge (Windows taskbar / Chrome download
+   shelf) + safe-area aware, so it can never hide underneath on any PC. */
 #inta-reel-menu {
   position: fixed !important;
   left: 16px !important;
-  bottom: 16px !important;
+  bottom: 76px !important;
+  bottom: max(76px, calc(env(safe-area-inset-bottom, 0px) + 76px)) !important;
   z-index: 999999 !important;
   pointer-events: auto !important;
+  max-width: calc(100vw - 32px) !important;
 }
 #inta-reel-menu .inta-menu-pop {
   top: auto !important;
@@ -49,6 +53,10 @@
   pointer-events: auto !important;
   position: absolute !important; top: 42px !important; right: 0 !important;
   min-width: 178px !important;
+  max-width: calc(100vw - 24px) !important;
+  max-height: calc(100vh - 160px) !important;
+  max-height: calc(100dvh - 160px) !important;
+  overflow-y: auto !important;
   background: Canvas !important; color: CanvasText !important;
   border: 1px solid ButtonBorder !important; border-radius: 12px !important;
   box-shadow: 0 8px 28px rgba(0,0,0,.28) !important;
@@ -403,11 +411,12 @@ html.inta-dark #inta-modal .inta-modal-actions button:hover { background: #2c2c2
   pointer-events: none !important;
 }
 
-/* toast */
+/* toast — lifted clear of taskbar / download shelf, wraps on small PCs */
 #inta-toast {
   position: fixed !important;
   left: 50% !important;
-  bottom: 30px !important;
+  bottom: 76px !important;
+  bottom: max(76px, calc(env(safe-area-inset-bottom, 0px) + 76px)) !important;
   transform: translateX(-50%) translateY(20px) !important;
   background: #111 !important;
   color: #fff !important;
@@ -420,6 +429,8 @@ html.inta-dark #inta-modal .inta-modal-actions button:hover { background: #2c2c2
   pointer-events: none !important;
   font-family: -apple-system, Segoe UI, Roboto, sans-serif !important;
   max-width: 90vw !important;
+  max-width: min(90vw, 480px) !important;
+  overflow-wrap: anywhere !important;
   text-align: center !important;
 }
 #inta-toast.show {
@@ -452,4 +463,17 @@ html.inta-wide main > div > div {
 @media (max-width: 640px) {
   #inta-lens { display: none !important; }
   .inta-copy { top: 52px !important; }
+}
+
+/* Small / short screens: keep every floating control inside the viewport,
+   comfortably above the taskbar + download shelf on any PC. */
+@media (max-width: 640px) {
+  #inta-reel-menu { left: 12px !important; bottom: 64px !important; }
+  #inta-toast { font-size: 13px !important; padding: 9px 14px !important; bottom: 64px !important; }
+  .inta-menu-pop { min-width: 160px !important; }
+}
+@media (max-height: 620px) {
+  #inta-reel-menu { bottom: 56px !important; }
+  #inta-toast { bottom: 56px !important; }
+  .inta-menu-pop { max-height: calc(100vh - 120px) !important; }
 }

@@ -435,22 +435,44 @@ async function resolveDownloadUrl(video) {
   return { url: "", via: "" };
 }
 
-/* ---------------- audio extraction: instant, on-device, single button -----
+/* ---------------- audio extraction: on-device, single button -> real .mp3 --
    Why downloader sites feel instant: they never re-record. They fetch the
-   direct .mp4 Instagram already streams and split the audio track out
-   (demux) in milliseconds. This does the same thing, fully on-device:
+   direct .mp4 Instagram already streams and split the audio track out.
+   This does the same thing, fully on-device, and encodes a real MP3:
      1. resolveDownloadUrl() finds the hidden direct .mp4 (element URL ->
         network-remembered file -> og:video meta) — the exact file IG streams.
      2. fetchAudioBytes() grabs its bytes (page fetch, background relay if the
         CDN refuses page-context CORS).
-     3. extractAacFromMp4() parses MP4 boxes, locates the AAC track and slices
-        its samples out of mdat, re-wrapping each raw frame with an ADTS
-        header -> .aac. No decode, no re-encode, original quality, milliseconds.
-     4. Fallback: decodeToWav() via native decodeAudioData -> .wav.
+     3. decodeAudioData() (native, fast C++) decodes to PCM, then the bundled
+        MP3 encoder (mp3enc.js, lamejs LAME port) encodes -> .mp3
+        (192 kbps stereo / 128 kbps mono). Nothing leaves the browser.
+     4. Fallbacks: instant AAC demux (extractAacFromMp4 -> .aac), then
+        decodeToWav() -> .wav.
    A server pipeline (proxy pools, bot accounts, FFmpeg farm) can't run inside
    a zero-backend MV3 extension — and would break the "0 servers" promise.
-   This is the fastest honest equivalent. No recording, no re-encode. */
+   This is the fastest honest equivalent. Last resort is a real-time
+   recording of the playing video (captureStream + MediaRecorder), which
+   works even when the CDN refuses every direct fetch. */
+/* The MP3 pipeline (your idea, exactly): the working .mp4 is pulled into
+   virtual space (memory ArrayBuffer — never a file on disk), decoded and
+   re-encoded there, and only the finished .mp3 is handed to the device.
+   One run at a time (busy guard) + top-level catch => no stuck toasts,
+   no double files, no unhandled errors, ever. */
+let audioBusy = false;
 async function downloadAudioFromElement(video) {
+  if (!settings.downloadBtn) return toast("Enable Download in popup first");
+  if (audioBusy) return toast("Audio already working — wait a moment");
+  audioBusy = true;
+  try {
+    await downloadAudioInner(video);
+  } catch (e) {
+    console.warn("[Gramiqo] audio pipeline failed", (e && e.message) || e);
+    toast("Couldn't extract audio here");
+  } finally {
+    audioBusy = false;
+  }
+}
+async function downloadAudioInner(video) {
   if (!settings.downloadBtn) return toast("Enable Download in popup first");
   toast("Finding audio…");
   let url = "";
@@ -461,40 +483,251 @@ async function downloadAudioFromElement(video) {
   if (!url) {
     try { url = video.currentSrc || video.src || ""; } catch {}
   }
-  if (!url || url.startsWith("blob:")) return toast("Video still loading — wait a second");
-  toast("Fetching audio…");
-  let ab = null;
-  try {
-    ab = await fetchAudioBytes(url);
-  } catch (e) {
-    return toast("Couldn't fetch audio here");
-  }
-  if (!ab || !ab.byteLength) return toast("Couldn't fetch audio here");
-  // Path 1 — instant demux: slice AAC frames straight out of the .mp4.
-  try {
-    const out = extractAacFromMp4(ab);
-    if (out && out.frames > 0 && out.bytes && out.bytes.length > 512) {
-      saveAudioBlob([out.bytes], "audio/aac", "gramiqo-audio-" + Date.now() + ".aac");
-      toast("Audio saved!");
-      return;
+  const v = video || findCenterVideo() || document.querySelector("video");
+  if (/^https?:\/\//.test(url || "")) {
+    toast("Fetching audio…");
+    let ab = null;
+    let fetchErr = null;
+    try {
+      ab = await fetchAudioBytes(url);
+    } catch (e) {
+      fetchErr = e instanceof Error ? e : new Error(String(e));
     }
-    throw new Error("no-frames");
-  } catch (e) {
-    console.warn("[Gramiqo] aac demux failed, wav fallback", (e && e.message) || e);
+    if (ab && ab.byteLength) {
+      if (await saveMp3FromBytes(ab)) return; // Path 1 — real MP3.
+      // Path 2 — instant demux: slice AAC frames straight out of the .mp4.
+      try {
+        const out = extractAacFromMp4(ab);
+        if (out && out.frames > 0 && out.bytes && out.bytes.length > 512) {
+          saveAudioBlob([out.bytes], "audio/aac", audioFileBase() + ".aac");
+          toast("Audio saved (AAC)!");
+          return;
+        }
+        throw new Error("no-frames");
+      } catch (e) {
+        console.warn("[Gramiqo] aac demux failed, wav fallback", (e && e.message) || e);
+      }
+      // Path 3 — native decode to WAV (fast C++ decode, trivial PCM wrap).
+      try {
+        toast("Encoding audio…");
+        const wav = await decodeToWav(ab);
+        saveAudioBlob([wav], "audio/wav", audioFileBase() + ".wav");
+        toast("Audio saved (WAV)!");
+        return;
+      } catch (e) {
+        console.warn("[Gramiqo] wav fallback failed, recording fallback", (e && e.message) || e);
+      }
+    } else {
+      console.warn("[Gramiqo] audio fetch failed", (fetchErr && fetchErr.message) || fetchErr);
+    }
+    // Path 4 — record the playing video's audio (works when the CDN
+    // refuses every fetch). Needs the tab visible + the video playing.
+    if (v && await recordAudioToMp3(v)) return;
+    toast("Couldn't fetch audio here" + (fetchErr ? " (" + shortErr(fetchErr) + ")" : ""));
+    return;
   }
-  // Path 2 — native decode to WAV (fast C++ decode, trivial PCM wrap).
+  // No direct URL (blob:/MSE stream): record the playing video instead.
+  if (v) {
+    if (await recordAudioToMp3(v)) return;
+  }
+  toast("Video still loading — wait a second");
+}
+
+/* Decode bytes -> encode real MP3 -> save. Returns true on success. */
+async function saveMp3FromBytes(ab) {
+  const base = audioFileBase();
   try {
-    toast("Encoding audio…");
-    const wav = await decodeToWav(ab);
-    saveAudioBlob([wav], "audio/wav", "gramiqo-audio-" + Date.now() + ".wav");
-    toast("Audio saved!");
+    toast("Decoding audio…");
+    const decoded = await decodeAudioBuffer(ab);
+    let mp3 = null;
+    try {
+      mp3 = await encodeAudioBufferToMp3(decoded.buf, 0, (pct) => {
+        toast("Encoding MP3 " + pct + "%…");
+      });
+    } finally {
+      try { await decoded.close(); } catch {}
+    }
+    if (mp3 && mp3.length > 512) {
+      saveAudioBlob([mp3], "audio/mpeg", base + ".mp3");
+      toast("Audio saved as MP3!");
+      return true;
+    }
+    throw new Error("encode-empty");
   } catch (e) {
-    toast("Couldn't extract audio here");
+    console.warn("[Gramiqo] mp3 path failed, aac fallback", (e && e.message) || e);
+    return false;
   }
 }
 
+/* Same base name as the video, mp4 -> mp3: on a reel/post page the file is
+   named after the post shortcode (gramiqo-<code>.mp3), else a timestamp. */
+function audioFileBase() {
+  try {
+    const m = (location.pathname || "").match(/^\/(?:p|reel|reels)\/([^/?#]+)/);
+    if (m && m[1] && m[1] !== "reels") {
+      const code = m[1].replace(/[^A-Za-z0-9_-]/g, "").slice(0, 32);
+      if (code) return "gramiqo-" + code;
+    }
+  } catch {}
+  return "gramiqo-audio-" + Date.now();
+}
+
+function shortErr(e) {
+  try {
+    return String((e && e.message) || e || "error").slice(0, 32);
+  } catch {
+    return "error";
+  }
+}
+
+/* A remembered URL can be a DASH range slice (bytestart/byteend): fetching
+   it returns a fragment nobody can decode. Dropping those params usually
+   yields the full progressive file instead. */
+function stripRangeParams(url) {
+  try {
+    const u = new URL(url);
+    u.searchParams.delete("bytestart");
+    u.searchParams.delete("byteend");
+    return u.toString();
+  } catch {
+    try {
+      return String(url).replace(/([?&])(bytestart|byteend)=[^&]*/g, "$1").replace(/[?&]$/, "");
+    } catch {
+      return url;
+    }
+  }
+}
+
+/* Decode an ArrayBuffer of video bytes to an AudioBuffer without detaching
+   the caller's buffer (decodeAudioData neuters the buffer it is given, so we
+   always decode a copy — fallbacks reuse the original). */
+function decodeAudioBuffer(ab) {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return Promise.reject(new Error("no-audio"));
+  const ctx = new AC();
+  let copy = null;
+  try {
+    copy = ab.slice ? ab.slice(0) : ab;
+  } catch (e) {
+    try { ctx.close(); } catch {}
+    return Promise.reject(e);
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const done = (buf) => {
+      if (settled) return;
+      settled = true;
+      if (!buf || !buf.length) {
+        try { ctx.close(); } catch {}
+        reject(new Error("empty-decode"));
+        return;
+      }
+      resolve({ buf: buf, close: () => { try { return ctx.close(); } catch { return Promise.resolve(); } } });
+    };
+    const fail = (e) => {
+      if (settled) return;
+      settled = true;
+      try { ctx.close(); } catch {}
+      reject(e instanceof Error ? e : new Error("decode-failed"));
+    };
+    try {
+      const p = ctx.decodeAudioData(copy, done, fail);
+      if (p && typeof p.then === "function") p.then(done, fail);
+    } catch (e) {
+      fail(e);
+    }
+  });
+}
+
+function mp3EncoderCtor() {
+  try {
+    const g = (typeof lamejs !== "undefined" && lamejs) || window.lamejs || null;
+    if (g && typeof g.Mp3Encoder === "function") return g.Mp3Encoder;
+  } catch {}
+  return null;
+}
+
+function floatTo16BitPCM(f32) {
+  const out = new Int16Array(f32.length);
+  for (let i = 0; i < f32.length; i++) {
+    const s = Math.max(-1, Math.min(1, f32[i] || 0));
+    out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  return out;
+}
+
+/* PCM AudioBuffer -> real MP3 bytes (Uint8Array). Async + chunked so long
+   videos never freeze the page; reports 0..100 progress. Throws codes. */
+async function encodeAudioBufferToMp3(audioBuf, kbps, onProgress) {
+  const Ctor = mp3EncoderCtor();
+  if (!Ctor) throw new Error("no-mp3enc");
+  const ch = Math.min(audioBuf.numberOfChannels || 1, 2);
+  const sr = audioBuf.sampleRate || 44100;
+  if (!(sr >= 8000) || sr > 48000) throw new Error("bad-rate");
+  const n = audioBuf.length || 0;
+  if (!n) throw new Error("empty-decode");
+  if (n > sr * 60 * 15) throw new Error("too-long"); // 15-min cap
+  const kb = kbps || (ch > 1 ? 192 : 128);
+  const enc = new Ctor(ch, sr, kb);
+  const FRAME = 1152;
+  const L = floatTo16BitPCM(audioBuf.getChannelData(0));
+  const R = ch > 1 ? floatTo16BitPCM(audioBuf.getChannelData(1)) : null;
+  const parts = [];
+  let total = 0;
+  let lastPct = -1;
+  const frames = Math.ceil(n / FRAME);
+  let f = 0;
+  for (let i = 0; i < n; i += FRAME, f++) {
+    const l = L.subarray(i, Math.min(i + FRAME, n));
+    let d = null;
+    if (R) {
+      const r = R.subarray(i, Math.min(i + FRAME, n));
+      d = enc.encodeBuffer(l, r);
+    } else {
+      d = enc.encodeBuffer(l);
+    }
+    if (d && d.length) {
+      parts.push(d);
+      total += d.length;
+      if (total > 60 * 1024 * 1024) throw new Error("too-big");
+    }
+    // Yield to the page every slice so toasts paint and clicks stay alive.
+    if ((f & 127) === 127) {
+      if (typeof onProgress === "function") {
+        const pct = Math.min(99, Math.floor((f / frames) * 100));
+        if (pct !== lastPct) {
+          lastPct = pct;
+          try { onProgress(pct); } catch {}
+        }
+      }
+      await new Promise((r) => setTimeout(r, 0));
+    }
+  }
+  const end = enc.flush();
+  if (end && end.length) {
+    parts.push(end);
+    total += end.length;
+  }
+  if (!total) throw new Error("encode-empty");
+  const out = new Uint8Array(total);
+  let o = 0;
+  for (const p of parts) {
+    const u = p instanceof Uint8Array ? p : new Uint8Array(p);
+    out.set(u.subarray(0, Math.min(u.length, total - o)), o);
+    o += Math.min(u.length, total - o);
+  }
+  try { if (typeof onProgress === "function") onProgress(100); } catch {}
+  return out;
+}
+
 function saveAudioBlob(parts, mime, name) {
-  const blob = new Blob(parts, { type: mime });
+  let blob = null;
+  try {
+    blob = new Blob(parts, { type: mime });
+  } catch {
+    toast("Couldn't build audio file");
+    return;
+  }
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = name;
@@ -504,60 +737,227 @@ function saveAudioBlob(parts, mime, name) {
   setTimeout(() => { try { URL.revokeObjectURL(a.href); } catch {} }, 15000);
 }
 
-/* Fetch with visible progress; falls back to the background worker (extension
-   origin + host permissions) when the CDN refuses page-context CORS. */
+/* Fetch with visible progress; falls back through several strategies:
+   page fetch with cookies -> page fetch without cookies (CDNs answering
+   `Access-Control-Allow-Origin: *` reject credentialed requests) ->
+   background worker (extension origin + host permissions + Referer).
+   Range-slice URLs are also retried as full files (range params stripped). */
 async function fetchAudioBytes(url) {
+  const candidates = [];
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => { try { ctrl.abort(); } catch {} }, 120000);
-    try {
-      const res = await fetch(url, { credentials: "include", signal: ctrl.signal });
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      const total = Number(res.headers.get("content-length")) || 0;
-      const reader = res.body && res.body.getReader ? res.body.getReader() : null;
-      if (reader && total > 0 && total <= 120 * 1024 * 1024) {
-        const chunks = [];
-        let got = 0;
-        let mark = 0;
-        for (;;) {
-          const step = await reader.read();
-          if (step.done) break;
-          const v = step.value;
-          chunks.push(v);
-          got += v.byteLength || v.length || 0;
-          const pct = Math.floor((got / total) * 100);
-          if (pct >= mark + 25 && pct < 100) {
-            mark = pct - (pct % 25);
-            toast("Fetching audio " + mark + "%…");
-          }
-          if (got > 120 * 1024 * 1024) throw new Error("too-big");
-        }
-        const out = new Uint8Array(got);
-        let off = 0;
-        for (const c of chunks) {
-          const u = c instanceof Uint8Array ? c : new Uint8Array(c.buffer || c);
-          out.set(u.subarray(0, Math.min(u.length, got - off)), off);
-          off += Math.min(u.length, got - off);
-        }
-        clearTimeout(timer);
-        if (!off) throw new Error("empty-file");
-        return out.buffer;
-      }
-      const ab = await res.arrayBuffer();
-      clearTimeout(timer);
-      if (!ab || !ab.byteLength) throw new Error("empty-file");
-      if (ab.byteLength > 120 * 1024 * 1024) throw new Error("too-big");
-      return ab;
-    } catch (e) {
-      clearTimeout(timer);
-      throw e;
+    for (const u of [url, stripRangeParams(url)]) {
+      if (u && !candidates.includes(u)) candidates.push(u);
     }
-  } catch (e) {
-    // Page fetch blocked (CORS) or failed — ask the background worker.
-    const r = await sendMsg({ type: "GRAMI_FETCH_BYTES", url: url });
-    if (r && r.ok && r.buf && r.buf.byteLength) return r.buf;
-    throw new Error("fetch-failed");
+  } catch {
+    candidates.push(url);
   }
+  let lastErr = null;
+  for (const u of candidates) {
+    try {
+      return await fetchBytesPage(u, true);
+    } catch (e) {
+      lastErr = e instanceof Error ? e : new Error(String(e));
+    }
+    try {
+      return await fetchBytesPage(u, false);
+    } catch (e) {
+      lastErr = e instanceof Error ? e : new Error(String(e));
+    }
+    try {
+      const r = await sendMsg({ type: "GRAMI_FETCH_BYTES", url: u });
+      if (r && r.ok && r.buf && r.buf.byteLength) return r.buf;
+      lastErr = new Error(String((r && r.error) || "relay-failed"));
+    } catch (e) {
+      lastErr = e instanceof Error ? e : new Error(String(e));
+    }
+  }
+  throw lastErr || new Error("fetch-failed");
+}
+
+async function fetchBytesPage(url, withCreds) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => { try { ctrl.abort(); } catch {} }, 120000);
+  try {
+    const opts = { signal: ctrl.signal };
+    if (withCreds) opts.credentials = "include";
+    const res = await fetch(url, opts);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const total = Number(res.headers.get("content-length")) || 0;
+    const reader = res.body && res.body.getReader ? res.body.getReader() : null;
+    if (reader && total > 0 && total <= 120 * 1024 * 1024) {
+      const chunks = [];
+      let got = 0;
+      let mark = 0;
+      for (;;) {
+        const step = await reader.read();
+        if (step.done) break;
+        const v = step.value;
+        chunks.push(v);
+        got += v.byteLength || v.length || 0;
+        const pct = Math.floor((got / total) * 100);
+        if (pct >= mark + 25 && pct < 100) {
+          mark = pct - (pct % 25);
+          toast("Fetching audio " + mark + "%…");
+        }
+        if (got > 120 * 1024 * 1024) throw new Error("too-big");
+      }
+      const out = new Uint8Array(got);
+      let off = 0;
+      for (const c of chunks) {
+        const u = c instanceof Uint8Array ? c : new Uint8Array(c.buffer || c);
+        out.set(u.subarray(0, Math.min(u.length, got - off)), off);
+        off += Math.min(u.length, got - off);
+      }
+      clearTimeout(timer);
+      if (!off) throw new Error("empty-file");
+      return out.buffer;
+    }
+    const ab = await res.arrayBuffer();
+    clearTimeout(timer);
+    if (!ab || !ab.byteLength) throw new Error("empty-file");
+    if (ab.byteLength > 120 * 1024 * 1024) throw new Error("too-big");
+    return ab;
+  } catch (e) {
+    clearTimeout(timer);
+    throw e;
+  }
+}
+
+/* Last-resort path: record the playing video's audio in real time via
+   captureStream + MediaRecorder, then decode + MP3-encode it. Works for
+   blob:/MSE streams and whenever the CDN refuses direct fetches.
+   Returns true + saves the .mp3 on success. */
+async function recordAudioToMp3(video) {
+  try {
+    toast("Direct fetch blocked — recording audio… keep the video playing");
+    const recBytes = await recordAudioFromVideo(video);
+    if (await saveMp3FromBytes(recBytes)) return true;
+    throw new Error("encode-empty");
+  } catch (e) {
+    console.warn("[Gramiqo] recording fallback failed", (e && e.message) || e);
+    return false;
+  }
+}
+
+function recordAudioFromVideo(video) {
+  return new Promise((resolve, reject) => {
+    let done = false;
+    const fail = (e) => {
+      if (done) return;
+      done = true;
+      reject(e instanceof Error ? e : new Error(String(e)));
+    };
+    try {
+      const cap = video.captureStream ? video.captureStream.bind(video) : null;
+      if (!cap || !window.MediaRecorder) return fail(new Error("no-capture"));
+      const stream = cap();
+      const tracks = stream ? stream.getAudioTracks() : [];
+      if (!tracks.length) return fail(new Error("no-audio-track"));
+      // Release the captured tracks once we're done — the page video itself
+      // keeps playing; only our recording tap is shut down (no leaks).
+      const stopTracks = () => {
+        try { tracks.forEach((t) => { try { t.stop(); } catch {} }); } catch {}
+      };
+      let mime = "";
+      try {
+        const cands = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+        for (const m of cands) {
+          if (MediaRecorder.isTypeSupported(m)) { mime = m; break; }
+        }
+      } catch {}
+      let rec = null;
+      try {
+        rec = mime
+          ? new MediaRecorder(new MediaStream(tracks), { mimeType: mime, audioBitsPerSecond: 128000 })
+          : new MediaRecorder(new MediaStream(tracks));
+      } catch (e) {
+        return fail(new Error("record-start"));
+      }
+      const chunks = [];
+      rec.ondataavailable = (e) => {
+        try { if (e.data && e.data.size) chunks.push(e.data); } catch {}
+      };
+      rec.onerror = () => failRestore(new Error("record-failed"));
+      rec.onstop = () => {
+        if (done) return;
+        done = true;
+        try {
+          if (!chunks.length) return reject(new Error("record-empty"));
+          const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+          blob.arrayBuffer().then(
+            (ab) => {
+              if (!ab || !ab.byteLength) reject(new Error("record-empty"));
+              else resolve(ab);
+            },
+            () => reject(new Error("record-empty"))
+          );
+        } catch (e) {
+          reject(e);
+        }
+      };
+      // Capture hears what the element outputs: unmute + full volume while
+      // recording, then restore the user's exact state.
+      let prevMuted = null;
+      let prevVol = 1;
+      let touched = false;
+      const restore = () => {
+        if (!touched) return;
+        touched = false;
+        try { video.muted = prevMuted; } catch {}
+        try { video.volume = prevVol; } catch {}
+      };
+      const failRestore = (e) => { stopTracks(); restore(); fail(e); };
+      try {
+        prevMuted = video.muted;
+        prevVol = video.volume;
+        video.muted = false;
+        if (!(video.volume > 0.5)) video.volume = 1;
+        touched = true;
+      } catch {}
+      const origStop = rec.onstop;
+      rec.onstop = (e) => { stopTracks(); restore(); origStop(e); };
+      try {
+        const p = video.play();
+        if (p && p.catch) p.catch(() => {});
+      } catch {}
+      try { video.currentTime = 0; } catch {}
+      const dur = video.duration;
+      const targetMs = (isFinite(dur) && dur > 0)
+        ? Math.min(dur, 300) * 1000 + 1500
+        : 5 * 60 * 1000; // MSE/blob streams: loop-detect stops us earlier
+      const t0 = Date.now();
+      let lastT = -1;
+      let ticks = 0;
+      const timer = setInterval(() => {
+        try {
+          ticks++;
+          const t = video.currentTime;
+          // Reel looped back to the start => one full pass captured.
+          if (ticks > 4 && lastT >= 0 && t < lastT - 0.3) {
+            clearInterval(timer);
+            try { rec.stop(); } catch (e) { failRestore(e); }
+            return;
+          }
+          if (t >= 0) lastT = t;
+          if (video.ended || Date.now() - t0 >= targetMs) {
+            clearInterval(timer);
+            try { rec.stop(); } catch (e) { failRestore(e); }
+          }
+        } catch (e) {
+          clearInterval(timer);
+          failRestore(e);
+        }
+      }, 250);
+      try {
+        rec.start(250);
+      } catch (e) {
+        clearInterval(timer);
+        failRestore(new Error("record-start"));
+      }
+    } catch (e) {
+      fail(e);
+    }
+  });
 }
 
 /* ===== audio-pure: MP4 -> AAC demux (pure JS, no DOM/chrome — unit-tested) ===== */
@@ -939,7 +1339,7 @@ function addMenuToPosts() {
         downloadUrl(r.url, `gramiqo-video-${Date.now()}.mp4`);
       }));
       if (article.querySelector("video")) {
-        pop.appendChild(menuRow("music", "Save audio", () => {
+        pop.appendChild(menuRow("music", "Save audio (MP3)", () => {
           const v = article.querySelector("video");
           if (!v) return toast("Video still loading — wait a second");
           downloadAudioFromElement(v);
@@ -1875,7 +2275,7 @@ function updateFloatingReelMenu() {
         if (!r.url) return toast("Video still loading — wait a second");
         downloadUrl(r.url, `gramiqo-reel-${Date.now()}.mp4`);
       }));
-      pop.appendChild(menuRow("music", "Save audio", () => {
+      pop.appendChild(menuRow("music", "Save audio (MP3)", () => {
         const v = currentReelVideo();
         if (!v) return toast("Video still loading — wait a second");
         downloadAudioFromElement(v);

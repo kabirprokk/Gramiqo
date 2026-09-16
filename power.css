@@ -75,9 +75,11 @@
 #inta-settings .inta-set-back { position: absolute !important; inset: 0 !important; background: rgba(0,0,0,.55) !important; }
 #inta-settings .inta-set-card {
   position: absolute !important; left: 50% !important; top: 10vh !important;
+  top: max(24px, 6dvh) !important;
   transform: translateX(-50%) !important;
   width: min(92vw, 480px) !important;
   max-height: 78vh !important; overflow-y: auto !important;
+  max-height: min(80dvh, calc(100dvh - 48px)) !important; overflow-y: auto !important;
   background: #fff !important; color: #000 !important;
   border-radius: 12px !important; padding: 16px !important;
   box-sizing: border-box !important;
@@ -155,9 +157,11 @@ html.inta-dark #inta-settings .inta-set-card { background: #262626 !important; c
 #inta-story-studio .inta-ss-back { position: absolute !important; inset: 0 !important; background: rgba(0,0,0,.6) !important; }
 #inta-story-studio .inta-ss-card {
   position: absolute !important; left: 50% !important; top: 6vh !important;
+  top: max(20px, 4dvh) !important;
   transform: translateX(-50%) !important;
   width: min(92vw, 420px) !important;
   max-height: 88vh !important; overflow-y: auto !important;
+  max-height: min(90dvh, calc(100dvh - 40px)) !important; overflow-y: auto !important;
   background: #fff !important; color: #000 !important;
   border-radius: 12px !important; padding: 16px !important;
   box-sizing: border-box !important;
@@ -221,10 +225,12 @@ html.inta-dark #inta-story-studio .inta-ss-card { background: #262626 !important
 #inta-settings .inta-note-row button[data-set-notedel] { background: rgba(128,128,128,.25) !important; color: inherit !important; }
 #inta-settings .inta-set-note { margin-top: 12px !important; font-size: 12px !important; opacity: .6 !important; }
 
-/* reel-view button (dialog reels → fullscreen), mirrors bulk FAB */
+/* reel-view button (dialog reels → fullscreen), mirrors bulk FAB.
+   Parked above the reel-menu dock + clear of taskbar/download shelf. */
 #inta-reelview {
   position: fixed !important;
-  left: 18px !important; bottom: 86px !important;
+  left: 18px !important; bottom: 128px !important;
+  bottom: max(128px, calc(env(safe-area-inset-bottom, 0px) + 128px)) !important;
   z-index: 999990 !important;
   display: inline-flex !important; align-items: center !important; gap: 8px !important;
   border: none !important; border-radius: 8px !important;
@@ -262,10 +268,11 @@ html.inta-ghost [class*="stories" i] { display: none !important; }
   border: 1px solid rgba(34,197,94,.4) !important;
 }
 
-/* bulk saver floating — IG primary blue */
+/* bulk saver floating — IG primary blue. Same safe parking as reelview. */
 #inta-bulk {
   position: fixed !important;
-  right: 18px !important; bottom: 86px !important;
+  right: 18px !important; bottom: 128px !important;
+  bottom: max(128px, calc(env(safe-area-inset-bottom, 0px) + 128px)) !important;
   z-index: 999990 !important;
   border: none !important; border-radius: 8px !important;
   padding: 8px 16px !important;
@@ -281,8 +288,10 @@ html.inta-ghost [class*="stories" i] { display: none !important; }
 #inta-palette .inta-pal-back { position: absolute !important; inset: 0 !important; background: rgba(0,0,0,.55) !important; }
 #inta-palette .inta-pal-card {
   position: absolute !important; left: 50% !important; top: 12vh !important;
+  top: max(24px, 8dvh) !important;
   transform: translateX(-50%) !important;
   width: min(92vw, 520px) !important;
+  max-height: min(80dvh, calc(100dvh - 48px)) !important; overflow-y: auto !important;
   background: #111 !important; color: #f5f5f5 !important;
   border: 1px solid rgba(255,255,255,.14) !important; border-radius: 16px !important;
   padding: 12px !important; box-sizing: border-box !important;
@@ -307,3 +316,14 @@ html.inta-ghost [class*="stories" i] { display: none !important; }
 #inta-palette .inta-pal-row kbd { background: rgba(255,255,255,.12) !important; border: none !important; color: inherit !important; border-radius: 6px !important; padding: 1px 8px !important; font-size: 11px !important; }
 #inta-palette .inta-pal-empty { padding: 14px !important; text-align: center !important; opacity: .7 !important; font-size: 13px !important; }
 #inta-palette .inta-pal-hint { margin-top: 8px !important; font-size: 11px !important; opacity: .5 !important; text-align: center !important; }
+
+/* Small / short screens: floating buttons stay inside the viewport and
+   clear of the taskbar + download shelf on any PC. */
+@media (max-width: 640px) {
+  #inta-reelview { left: 12px !important; bottom: 112px !important; padding: 7px 12px !important; font-size: 13px !important; }
+  #inta-bulk { right: 12px !important; bottom: 112px !important; padding: 7px 12px !important; font-size: 13px !important; }
+}
+@media (max-height: 620px) {
+  #inta-reelview, #inta-bulk { bottom: 104px !important; }
+  #inta-palette .inta-pal-list { max-height: 40vh !important; max-height: 40dvh !important; }
+}

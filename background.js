@@ -14,11 +14,17 @@ let dlActive = false;
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg) return false;
   if (msg.type === "GRAMI_GET_MEDIA" || msg.type === "INTA_GET_MEDIA") {
-    // Newest direct video file seen on this tab (beats blob:/protected URLs).
+    // Best direct video file seen on this tab (beats blob:/protected URLs).
+    // Prefer full progressive files over DASH range segments: a segment URL
+    // (bytestart/byteend) only yields a slice of bytes, which audio/video
+    // decode can't use — so rank full files first, newest wins ties.
     try {
       const arr = mediaByTab.get(sender?.tab?.id) || [];
-      const last = arr[arr.length - 1] || null;
-      sendResponse({ ok: true, url: last ? last.url : "" });
+      let best = null;
+      for (const it of arr) {
+        if (!best || it.rank > best.rank || (it.rank === best.rank && it.at >= best.at)) best = it;
+      }
+      sendResponse({ ok: true, url: best ? best.url : "" });
     } catch {
       try { sendResponse({ ok: false, url: "" }); } catch {}
     }
@@ -45,13 +51,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "GRAMI_FETCH_BYTES") {
     // Audio path: fetch the direct .mp4 from the worker (extension origin +
-    // host permissions), so page-context CORS can never block extraction.
-    // CDN links are signed query URLs — no page cookies needed.
+    // host permissions), so page-context CORS/CSP can never block extraction.
+    // CDN links are signed query URLs — no page cookies needed. A Referer is
+    // sent because some CDN edges reject referer-less fetches, and DASH
+    // range slices are expanded to the full file (a slice alone is useless).
     (async () => {
       try {
         const u = String(msg.url || "");
         if (!/^https?:\/\//.test(u)) throw new Error("bad-url");
-        const res = await fetch(u);
+        const full = stripRangeParams(u);
+        const res = await fetch(full, {
+          headers: { Referer: "https://www.instagram.com/", Accept: "*/*" },
+        });
         if (!res.ok) throw new Error("HTTP " + res.status);
         const buf = await res.arrayBuffer();
         if (!buf || !buf.byteLength) throw new Error("empty-file");
@@ -65,6 +76,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   return false;
 });
+
+// Drop DASH range params so a remembered segment URL fetches the full file.
+function stripRangeParams(url) {
+  try {
+    const u = new URL(url);
+    u.searchParams.delete("bytestart");
+    u.searchParams.delete("byteend");
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
 
 function queueDownload(url, filename) {
   return new Promise((resolve, reject) => {
@@ -120,14 +143,44 @@ function guessExt(url) {
 // --- Direct media URL memory (ultra-fast, unprotected downloads) ---
 // Instagram increasingly serves video as blob:/DRM streams, whose element
 // URL can't be saved. But the real .mp4 file still crosses the network —
-// remember the newest video file per tab so downloads use it directly.
+// remember the best video file per tab so downloads use it directly.
+// Two signals: URL shape (extension or fbcdn range/dash hints) and the real
+// Content-Type response header (catches video URLs with no file extension).
 const mediaByTab = new Map();
-function rememberMedia(details) {
+function looksLikeVideoFile(u) {
   try {
-    const u = String(details?.url || "");
-    if (!/\.(mp4|mov|m4v|webm)(\?|#|$)/i.test(u)) return;
-    if (u.includes("sprite") || u.includes("emoji")) return;
-    const tabId = details?.tabId;
+    const s = String(u || "").toLowerCase();
+    if (!/^https?:\/\//.test(s)) return false;
+    // Never media: images, styles, scripts, API JSON.
+    if (/\.(jpg|jpeg|png|webp|gif|avif|svg|ico|css|js|json)(\?|#|$)/.test(s)) return false;
+    if (s.includes("sprite") || s.includes("emoji")) return false;
+    // Full progressive files.
+    if (/\.(mp4|mov|m4v|webm|mp3|m4a|aac)(\?|#|$)/.test(s)) return true;
+    // fbcdn range/dash video fetches (no extension, still video bytes).
+    if (s.includes("bytestart") || s.includes("byteend")) return true;
+    if (s.includes("mime=video") || s.includes("mime=audio")) return true;
+    if (s.includes("/dash/") || s.includes("dash_") || s.includes("video_dash")) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+// Full files (rank 2) beat extension-less video URLs (rank 1) beat range
+// segments (rank 0, only a byte slice — undecodable on their own).
+function rankMediaUrl(u) {
+  try {
+    const s = String(u || "").toLowerCase();
+    if (s.includes("bytestart") || s.includes("byteend")) return 0;
+    if (/\.(mp4|mov|m4v|webm|mp3|m4a|aac)(\?|#|$)/.test(s)) return 2;
+    return 1;
+  } catch {
+    return 0;
+  }
+}
+function storeMediaUrl(tabId, rawUrl) {
+  try {
+    const u = String(rawUrl || "").split("#")[0];
+    if (!u) return;
     if (tabId == null || tabId < 0) return;
     let arr = mediaByTab.get(tabId);
     if (!arr) {
@@ -135,8 +188,39 @@ function rememberMedia(details) {
       mediaByTab.set(tabId, arr);
     }
     if (arr.length && arr[arr.length - 1].url === u) return;
-    arr.push({ url: u.split("#")[0], at: Date.now() });
+    arr.push({ url: u, at: Date.now(), rank: rankMediaUrl(u) });
     while (arr.length > 10) arr.shift();
+  } catch {}
+}
+function rememberMedia(details) {
+  try {
+    const u = String(details?.url || "");
+    // <video>/<audio> element loads are always worth remembering.
+    if (details?.type !== "media" && !looksLikeVideoFile(u)) return;
+    if (/\.(jpg|jpeg|png|webp|gif|avif|svg)(\?|#|$)/i.test(u)) return;
+    storeMediaUrl(details?.tabId, u);
+  } catch {}
+}
+// Header sniffing: the ground truth when URLs carry no extension.
+// (Playlists like mpegurl are skipped — a playlist isn't decodable bytes.)
+function rememberMediaByHeaders(details) {
+  try {
+    const u = String(details?.url || "");
+    if (!/^https?:\/\//.test(u)) return;
+    const hs = details?.responseHeaders || [];
+    let ct = "";
+    for (const h of hs) {
+      try {
+        if (String(h?.name || "").toLowerCase() === "content-type") {
+          ct = String(h?.value || "").toLowerCase();
+          break;
+        }
+      } catch {}
+    }
+    if (!ct) return;
+    if (ct.includes("mpegurl") || ct.includes("m3u8") || ct.includes("mpd")) return;
+    if (!(ct.startsWith("video/") || ct.startsWith("audio/"))) return;
+    storeMediaUrl(details?.tabId, u);
   } catch {}
 }
 try {
@@ -144,6 +228,11 @@ try {
     chrome.webRequest.onResponseStarted.addListener(rememberMedia, {
       urls: ["*://*.fbcdn.net/*", "*://*.cdninstagram.com/*", "*://*.instagram.com/*"],
     });
+  }
+  if (chrome.webRequest?.onHeadersReceived) {
+    chrome.webRequest.onHeadersReceived.addListener(rememberMediaByHeaders, {
+      urls: ["*://*.fbcdn.net/*", "*://*.cdninstagram.com/*", "*://*.instagram.com/*"],
+    }, ["responseHeaders"]);
   }
 } catch (e) {
   console.warn("[Gramiqo] media memory unavailable", e);

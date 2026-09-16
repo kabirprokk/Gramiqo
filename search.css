@@ -372,6 +372,7 @@ button.inta-pill { cursor: pointer !important; font-family: inherit !important; 
   top: 0 !important;
   right: 0 !important;
   height: 100% !important;
+  height: 100dvh !important;
   width: min(420px, 94vw) !important;
   box-sizing: border-box !important;
   background: #0a0a0a !important;
