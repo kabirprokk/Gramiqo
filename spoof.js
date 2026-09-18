@@ -1,0 +1,81 @@
+/* ============================================================
+   Inta-Enhancer - spoof.js (OLIN 1.1.b)
+   Runs in PAGE world (MAIN) at document_start — registered ONLY
+   while Mobile feel is ON (background.js registers/unregisters it
+   with the toggle; a reload applies the change, same as the UA rule).
+   Makes Instagram's OWN JavaScript see an iPhone:
+     navigator.userAgent / appVersion / platform / vendor /
+     userAgentData (+ high-entropy values).
+   Deliberately does NOT fake hardware or data traffic: maxTouchPoints /
+   ontouchstart stay real (faking them emptied the feed), window.chrome is
+   kept (deleting it blanked pages), and API requests (XHR) keep real
+   client hints — only the top-level page load carries the iPhone look.
+   Network level (UA header + Sec-CH-* client hints) is spoofed by
+   the declarativeNetRequest rules in background.js.
+   Everything is guarded: if IG freezes an object, that one getter
+   is skipped and the rest still apply. No page behavior is changed.
+   ============================================================ */
+(() => {
+"use strict";
+
+const IPHONE_UA =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
+const IPHONE_APPVERSION =
+  "5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
+
+const val = (v) => ({ configurable: true, enumerable: true, get: () => v });
+
+try {
+  Object.defineProperty(Navigator.prototype, "userAgent", val(IPHONE_UA));
+} catch {}
+try {
+  Object.defineProperty(Navigator.prototype, "appVersion", val(IPHONE_APPVERSION));
+} catch {}
+try {
+  Object.defineProperty(Navigator.prototype, "platform", val("iPhone"));
+} catch {}
+try {
+  Object.defineProperty(Navigator.prototype, "vendor", val("Apple Computer"));
+} catch {}
+
+// NOTE (empty-feed fix): do NOT spoof maxTouchPoints / ontouchstart.
+// Claiming touch hardware makes Instagram's page JS take mobile/touch code
+// paths on a desktop that may have none — feed components then mount wrong
+// or not at all (empty black shell). UA/platform strings are enough for
+// the mobile feel; hardware signals stay truthful.
+
+try {
+  const brands = [
+    { brand: "Safari", version: "17" },
+    { brand: "Mobile Safari", version: "17" },
+    { brand: "Not;A=Brand", version: "99" },
+  ];
+  const uaData = {
+    brands,
+    mobile: true,
+    platform: "iOS",
+    getHighEntropyValues: () =>
+      Promise.resolve({
+        architecture: "arm",
+        bitness: "64",
+        formFactors: ["Mobile"],
+        fullVersionList: brands,
+        mobile: true,
+        model: "iPhone",
+        platform: "iOS",
+        platformVersion: "17.0",
+      }),
+  };
+  Object.defineProperty(Navigator.prototype, "userAgentData", val(uaData));
+} catch {}
+
+// NOTE (empty-feed fix, part 2): do NOT touch window.ontouchstart either.
+// Same reason as maxTouchPoints above — page-JS feature detects must see
+// the real desktop. Left completely alone.
+
+// NOTE (blank-page fix): do NOT delete window.chrome / window.browser.
+// Instagram's desktop bundle (served to real desktop Chrome) can depend on
+// these globals; removing them while on a desktop engine was blanking the
+// page for some users. A spoof "tell" is harmless — a black page is not.
+try {} catch {}
+})();

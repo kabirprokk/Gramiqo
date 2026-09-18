@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="google-site-verification" content="nz_AqSul1FjgcGLhtazkAg4_x7tTgz6fA5hf9y8XYIE" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Report a Bug — Gramiqo (Instagram Chrome Extension)</title>
+<meta name="description" content="Found a bug in Gramiqo? Report it here — the form opens a pre-filled GitHub issue with version, steps and console output." />
+<meta name="keywords" content="gramiqo support, report gramiqo bug, gramiqo not working, instagram extension fix, instagram downloader troubleshooting, contact gramiqo developer, gramiqo github issues" />
+<meta name="robots" content="index, follow" />
+<link rel="canonical" href="https://gramiqo.vercel.app/bug.html" />
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%230082FB'/%3E%3Cstop offset='.5' stop-color='%23786EFD'/%3E%3Cstop offset='1' stop-color='%23E940DF'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='24' height='24' rx='6' fill='url(%23g)'/%3E%3Ccircle cx='12' cy='2.6' r='1.5' fill='white'/%3E%3Crect x='11.3' y='3.4' width='1.4' height='3.6' rx='0.7' fill='white'/%3E%3Crect x='5' y='6.5' width='14' height='11.5' rx='5.5' fill='white'/%3E%3Ccircle cx='9.2' cy='11.5' r='1.7' fill='%232B1A5E'/%3E%3Ccircle cx='14.8' cy='11.5' r='1.7' fill='%232B1A5E'/%3E%3Cpath d='M9.3 14.6Q12 16.9 14.7 14.6' fill='none' stroke='%232B1A5E' stroke-width='1.7' stroke-linecap='round'/%3E%3C/svg%3E" />
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="w-mark" viewBox="0 0 24 24"><circle cx="12" cy="2.6" r="1.5" fill="#fff" stroke="none"/><rect x="11.3" y="3.4" width="1.4" height="3.6" rx="0.7" fill="#fff" stroke="none"/><rect x="5" y="6.5" width="14" height="11.5" rx="5.5" fill="#fff" stroke="none"/><circle cx="9.2" cy="11.5" r="1.7" fill="#2B1A5E" stroke="none"/><circle cx="14.8" cy="11.5" r="1.7" fill="#2B1A5E" stroke="none"/><path d="M9.3 14.6Q12 16.9 14.7 14.6" fill="none" stroke="#2B1A5E" stroke-width="1.7" stroke-linecap="round"/></symbol>
+  </defs>
+</svg>
+<header class="nav" id="topnav">
+  <div class="wrap nav-in">
+    <div class="brand"><a class="brand-link" href="index.html"><span class="logo"><svg><use href="#w-mark"/></svg></span><span>Gramiqo <em>OLIN 1.1.b</em></span></a></div>
+    <nav aria-label="Main" id="mainnav">
+      <a href="index.html">Home</a>
+      <a href="features.html">Features</a>
+      <a href="install.html">Install</a>
+      <a href="faq.html">FAQ</a>
+      <a href="bug.html" aria-current="page">Report bug</a>
+      <a class="btn small" href="https://github.com/kabirprokk/Gramiqo" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+    <button id="menuBtn" aria-label="Open menu" aria-expanded="false" aria-controls="mobilePanel"><span></span><span></span><span></span></button>
+  </div>
+  <div class="mobile-panel" id="mobilePanel" hidden>
+    <a href="index.html">Home</a>
+    <a href="features.html">Features</a>
+    <a href="install.html">Install</a>
+    <a href="faq.html">FAQ</a>
+    <a href="bug.html">Report bug</a>
+    <a href="https://github.com/kabirprokk/Gramiqo" target="_blank" rel="noopener">GitHub</a>
+  </div>
+</header>
+
+<section class="wrap page-head" style="max-width:720px">
+  <h1>Report a bug</h1>
+  <p class="sec-sub">Fill this in, hit submit — it opens a pre-filled GitHub Issue. You need a (free) GitHub account to post it.</p>
+  <div class="card" style="display:grid;gap:12px">
+    <label style="display:grid;gap:6px;font-size:13px;font-weight:700">Short title
+      <input id="bugTitle" type="text" placeholder="e.g. Audio button missing on reels" maxlength="120" />
+    </label>
+    <label style="display:grid;gap:6px;font-size:13px;font-weight:700">Where does it happen?
+      <select id="bugArea">
+        <option>Feed / posts</option>
+        <option>Reels</option>
+        <option>Stories</option>
+        <option>Search with Meta AI</option>
+        <option>Profile / bio-links</option>
+        <option>Settings hub / Notes</option>
+        <option>Popup toggles</option>
+        <option>Website</option>
+        <option>Something else</option>
+      </select>
+    </label>
+    <label style="display:grid;gap:6px;font-size:13px;font-weight:700">Steps to reproduce
+      <textarea id="bugSteps" rows="4" placeholder="1. Open instagram.com …&#10;2. Click …&#10;3. See the bug"></textarea>
+    </label>
+    <label style="display:grid;gap:6px;font-size:13px;font-weight:700">What did you expect?
+      <textarea id="bugExpected" rows="2" placeholder="What should have happened?"></textarea>
+    </label>
+    <label style="display:grid;gap:6px;font-size:13px;font-weight:700">What happened instead? (paste any toast / console error)
+      <textarea id="bugActual" rows="3" placeholder="Exact message, e.g. “Download blocked”"></textarea>
+    </label>
+    <div class="cta" style="margin:4px 0 0">
+      <button class="btn" id="bugSubmit" type="button">Submit via GitHub</button>
+      <a class="btn ghost" href="https://github.com/kabirprokk/Gramiqo/issues" target="_blank" rel="noopener">All open issues</a>
+    </div>
+    <p class="form-msg" id="bugMsg" role="status" aria-live="polite" hidden></p>
+    <p class="tiny">Extension version: 1.1.2 · OLIN 1.1.b — include it if you changed files locally. Before reporting: reload the extension at <code>chrome://extensions</code> and hard-reload Instagram (<kbd>Ctrl+Shift+R</kbd>).</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-in">
+    <div>© <span id="yr">2026</span> <b>Gramiqo</b> · OLIN 1.1.b · Made for learning · <a href="bug.html">Contact the developer</a></div>
+    <div class="links"><a href="index.html">Home</a><a href="features.html">Features</a><a href="install.html">Install</a><a href="faq.html">FAQ</a><a href="bug.html">Report a bug</a><a href="https://github.com/kabirprokk/Gramiqo" target="_blank" rel="noopener">GitHub</a></div>
+  </div>
+</footer>
+<button id="toTop" aria-label="Back to top">↑</button>
+<script src="script.js"></script>
+<script>
+document.getElementById("bugSubmit").addEventListener("click", () => {
+  const v = (id) => (document.getElementById(id)?.value || "").trim();
+  const msg = document.getElementById("bugMsg");
+  const say = (text, ok) => {
+    msg.hidden = false;
+    msg.textContent = text;
+    msg.classList.toggle("err", !ok);
+    msg.classList.toggle("ok", !!ok);
+  };
+  const title = v("bugTitle");
+  const steps = v("bugSteps");
+  if (title.length < 8) {
+    say("Please give the bug a clear title (8+ characters) — one line is enough.", false);
+    return;
+  }
+  if (steps.length < 12) {
+    say("Please add at least one reproduction step so it can actually be fixed.", false);
+    return;
+  }
+  const body = [
+    "**Area:** " + v("bugArea"),
+    "**Version:** 1.1.2 (OLIN 1.1.b)",
+    "",
+    "**Steps:**",
+    v("bugSteps") || "-",
+    "",
+    "**Expected:**",
+    v("bugExpected") || "-",
+    "",
+    "**Actual:**",
+    v("bugActual") || "-",
+  ].join("\n");
+  const url = "https://github.com/kabirprokk/Gramiqo/issues/new?title="
+    + encodeURIComponent("[bug] " + title) + "&body=" + encodeURIComponent(body);
+  say("Opening GitHub Issues with your report pre-filled…", true);
+  setTimeout(() => window.open(url, "_blank", "noopener"), 500);
+});
+</script>
+</body>
+</html>

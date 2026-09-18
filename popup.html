@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="p-phone" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></symbol>
+      <symbol id="p-user" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+      <symbol id="p-spark" viewBox="0 0 24 24"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z" fill="currentColor" stroke="none"/></symbol>
+      <symbol id="p-logo" viewBox="0 0 24 24"><circle cx="12" cy="2.6" r="1.5" fill="#fff" stroke="none"/><rect x="11.3" y="3.4" width="1.4" height="3.6" rx="0.7" fill="#fff" stroke="none"/><rect x="5" y="6.5" width="14" height="11.5" rx="5.5" fill="#fff" stroke="none"/><circle cx="9.2" cy="11.5" r="1.7" fill="#2B1A5E" stroke="none"/><circle cx="14.8" cy="11.5" r="1.7" fill="#2B1A5E" stroke="none"/><path d="M9.3 14.6Q12 16.9 14.7 14.6" fill="none" stroke="#2B1A5E" stroke-width="1.7" stroke-linecap="round"/></symbol>
+      <symbol id="p-download" viewBox="0 0 24 24"><path d="M12 3v12m0 0L7.5 10.5M12 15l4.5-4.5M4 21h16"/></symbol>
+      <symbol id="p-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></symbol>
+      <symbol id="p-camera" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></symbol>
+      <symbol id="p-film" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 4v16M17 4v16M2 9h5M2 15h5M17 9h5M17 15h5"/></symbol>
+      <symbol id="p-layers" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></symbol>
+      <symbol id="p-command" viewBox="0 0 24 24"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z"/></symbol>
+      <symbol id="p-trend" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></symbol>
+      <symbol id="p-hash" viewBox="0 0 24 24"><path d="M4 9h16M4 15h16M10 3L8 21M16 3l-2 18"/></symbol>
+      <symbol id="p-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
+      <symbol id="p-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+      <symbol id="p-eyeoff" viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></symbol>
+      <symbol id="p-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
+      <symbol id="p-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+      <symbol id="p-expand" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></symbol>
+      <symbol id="p-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3" fill="currentColor" stroke="none"/></symbol>
+      <symbol id="p-volume" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></symbol>
+      <symbol id="p-external" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14L21 3"/></symbol>
+    </defs>
+  </svg>
+  <div class="header">
+    <div class="logo"><svg><use href="#p-logo"/></svg></div>
+    <div>
+      <h1>Gramiqo</h1>
+      <p>Mobile features for PC web</p>
+    </div>
+  </div>
+
+  <div class="list">
+    <div class="grp">Core</div>
+    <label><input type="checkbox" id="mobileMode"><svg class="pic"><use href="#p-phone"/></svg><span>Mobile feel (iPhone mode — turn OFF + reload if IG goes blank)</span></label>
+    <label><input type="checkbox" id="profileTools"><svg class="pic"><use href="#p-user"/></svg><span>Mobile profile tools (HD pic, edit helpers, nav)</span></label>
+    <label><input type="checkbox" id="enhancedSearch"><svg class="pic"><use href="#p-spark"/></svg><span>Search with Meta AI (default, like mobile)</span></label>
+    <label><input type="checkbox" id="keywordSearch"><svg class="pic"><use href="#p-search"/></svg><span>Keyword results first (not hashtag-only)</span></label>
+    <label><input type="checkbox" id="downloadBtn"><svg class="pic"><use href="#p-download"/></svg><span>Download buttons on posts/reels</span></label>
+    <label><input type="checkbox" id="hdPfp"><svg class="pic"><use href="#p-user"/></svg><span>HD profile pic viewer</span></label>
+    <label><input type="checkbox" id="copyCaption"><svg class="pic"><use href="#p-copy"/></svg><span>Copy caption button</span></label>
+    <div class="grp">Power pack</div>
+    <label><input type="checkbox" id="storySaver"><svg class="pic"><use href="#p-camera"/></svg><span>Story saver button</span></label>
+    <label><input type="checkbox" id="reelsToolkit"><svg class="pic"><use href="#p-film"/></svg><span>Reels toolkit (speed, loop, auto-next)</span></label>
+    <label><input type="checkbox" id="bulkSaver"><svg class="pic"><use href="#p-layers"/></svg><span>Bulk save visible grid (up to 12)</span></label>
+    <label><input type="checkbox" id="cmdPalette"><svg class="pic"><use href="#p-command"/></svg><span>Command palette (Ctrl+K)</span></label>
+    <label><input type="checkbox" id="statsHistory"><svg class="pic"><use href="#p-trend"/></svg><span>Profile growth tracker</span></label>
+    <label><input type="checkbox" id="hashtagTools"><svg class="pic"><use href="#p-hash"/></svg><span>One-tap hashtag copy</span></label>
+    <label><input type="checkbox" id="centerStage"><svg class="pic"><use href="#p-target"/></svg><span>Center stage (stories tray centered)</span></label>
+    <label><input type="checkbox" id="quickCreate"><svg class="pic"><use href="#p-plus"/></svg><span>Quick create (post reels like mobile)</span></label>
+    <label><input type="checkbox" id="dataSaver"><svg class="pic"><use href="#p-layers"/></svg><span>Data saver (no autoplay)</span></label>
+    <label><input type="checkbox" id="autoUnmute"><svg class="pic"><use href="#p-volume"/></svg><span>Auto-unmute reels</span></label>
+    <label><input type="checkbox" id="reelRedirect"><svg class="pic"><use href="#p-expand"/></svg><span>Explore reels open full-screen</span></label>
+    <label><input type="checkbox" id="clickOpensReel"><svg class="pic"><use href="#p-play"/></svg><span>Click reels to open full view</span></label>
+    <label><input type="checkbox" id="ghostMode"><svg class="pic"><use href="#p-eyeoff"/></svg><span>Ghost calm mode</span></label>
+    <div class="grp">View</div>
+    <label><input type="checkbox" id="zoomHover"><svg class="pic"><use href="#p-search"/></svg><span>Hover to zoom photos</span></label>
+    <label><input type="checkbox" id="darkMode"><svg class="pic"><use href="#p-moon"/></svg><span>Force dark mode</span></label>
+    <label><input type="checkbox" id="wideFeed"><svg class="pic"><use href="#p-expand"/></svg><span>Wide feed (big screens)</span></label>
+  </div>
+
+  <div class="shortcuts">
+    <b>Search with Meta AI (default):</b>
+    <div>Click <b>Search</b> in left menu, type — For-you shows a Meta AI answer + follow-up box + Suggested Reels, just like mobile. Tabs: For you / Accounts / Reels / Audio / Tags.</div>
+    <div style="margin-top:6px"><kbd>Ctrl+K</kbd> commands &nbsp; <kbd>N</kbd> new post &nbsp; <kbd>/</kbd> search &nbsp; <kbd>D</kbd> download &nbsp; <kbd>C</kbd> caption</div>
+    <div><kbd>F</kbd> fullscreen &nbsp; <kbd>P</kbd> picture-in-picture</div>
+    <div style="margin-top:6px">Profile pages get HD / Copy-link / Avatar / Stats / Edit bar. Edit form gets native bio + username counters and a links editor (mobile-only on IG web). <b>Mobile feel</b> needs an Instagram reload — turn OFF to get desktop back. If Create won't open, turn Mobile feel OFF + reload (IG hides Create in mobile web).</div>
+  </div>
+
+  <button id="openInsta">Open Instagram <svg class="pic"><use href="#p-external"/></svg></button>
+  <button id="openSettings">All settings hub</button>
+  <button id="copyDiag">Copy search diagnostics (paste it to support)</button>
+  <div id="diagStatus" class="diag-status"></div>
+  <button id="resetAll">Reset all settings (fixes stuck/blank states)</button>
+  <div class="foot">OLIN 1.1.b • Made for learning</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

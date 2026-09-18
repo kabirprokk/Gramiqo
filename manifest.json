@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "Gramiqo",
+  "version": "1.1.7",
+  "version_name": "OLIN 1.1.g",
+  "description": "Bring mobile Instagram features to PC web: Meta AI search, mobile-mode, story saver, reels toolkit, bulk download, profile insights, bio-links editor, HD pics & more. [OLIN 1.1.g]",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+      "default_title": "Gramiqo"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.instagram.com/*"],
+      "js": ["icons.js", "content.js", "search.js", "power.js"],
+      "css": ["content.css", "search.css", "power.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": ["storage", "downloads", "declarativeNetRequest", "declarativeNetRequestWithHostAccess", "tabs", "activeTab", "scripting", "webRequest"],
+  "host_permissions": ["*://*.instagram.com/*", "*://*.cdninstagram.com/*", "*://*.fbcdn.net/*"]
+}

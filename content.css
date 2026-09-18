@@ -1,0 +1,479 @@
+/* Gramiqo - native UI only, no floating panel.
+   Icons are inline SVG (icons.js): inherit text color, sized per slot. */
+.inta-ic-svg { flex: 0 0 auto !important; vertical-align: -3px !important; }
+#inta-profile-bar button { display: inline-flex !important; align-items: center !important; gap: 6px !important; }
+#inta-profile-bar button .inta-ic-svg { width: 16px !important; height: 16px !important; }
+.inta-dl .inta-ic-svg, .inta-copy .inta-ic-svg, .inta-reel-dl .inta-ic-svg { width: 18px !important; height: 18px !important; }
+.inta-avatar-badge { display: inline-flex !important; align-items: center !important; gap: 4px !important; }
+.inta-avatar-badge .inta-ic-svg { width: 11px !important; height: 11px !important; }
+#inta-top-search .inta-ic-svg { width: 16px !important; height: 16px !important; }
+#inta-top-search button[data-tact="create"] .inta-ic-svg { width: 18px !important; height: 18px !important; }
+.inta-modal-actions button { display: inline-flex !important; align-items: center !important; gap: 6px !important; }
+.inta-modal-actions .inta-ic-svg { width: 14px !important; height: 14px !important; }
+.inta-links-title { display: inline-flex !important; align-items: center !important; gap: 8px !important; }
+.inta-links-add { display: inline-flex !important; align-items: center !important; justify-content: center !important; gap: 6px !important; }
+.inta-links-add .inta-ic-svg { width: 14px !important; height: 14px !important; }
+
+/* Floating reel menu: OUTSIDE the reel frame (viewport bottom-left).
+   Nothing is ever injected into reel holders — zero layout footprint.
+   Lifted well clear of the bottom edge (Windows taskbar / Chrome download
+   shelf) + safe-area aware, so it can never hide underneath on any PC. */
+#inta-reel-menu {
+  position: fixed !important;
+  left: 16px !important;
+  bottom: 76px !important;
+  bottom: max(76px, calc(env(safe-area-inset-bottom, 0px) + 76px)) !important;
+  z-index: 999999 !important;
+  pointer-events: auto !important;
+  max-width: calc(100vw - 32px) !important;
+}
+#inta-reel-menu .inta-menu-pop {
+  top: auto !important;
+  bottom: 44px !important;
+  right: auto !important;
+  left: 0 !important;
+}
+
+/* One ⋯ menu per post (super-simple UI): single button, dropdown rows.
+   System colors adapt to IG light/dark automatically — PC look kept. */
+.inta-menu-wrap { position: absolute !important; top: 10px !important; right: 10px !important; z-index: 999999 !important; pointer-events: auto !important; }
+.inta-menu {
+  pointer-events: auto !important;
+  width: 36px !important; height: 36px !important;
+  border-radius: 50% !important; border: none !important;
+  background: rgba(0,0,0,.7) !important; color: #fff !important;
+  font-size: 15px !important; font-weight: 800 !important; letter-spacing: 1px !important;
+  cursor: pointer !important; line-height: 1 !important;
+  display: flex !important; align-items: center !important; justify-content: center !important;
+  padding: 0 0 4px 1px !important;
+}
+.inta-menu:hover { background: #0095F6 !important; }
+.inta-menu-pop {
+  display: none !important;
+  pointer-events: auto !important;
+  position: absolute !important; top: 42px !important; right: 0 !important;
+  min-width: 178px !important;
+  max-width: calc(100vw - 24px) !important;
+  max-height: calc(100vh - 160px) !important;
+  max-height: calc(100dvh - 160px) !important;
+  overflow-y: auto !important;
+  background: Canvas !important; color: CanvasText !important;
+  border: 1px solid ButtonBorder !important; border-radius: 12px !important;
+  box-shadow: 0 8px 28px rgba(0,0,0,.28) !important;
+  padding: 6px !important; z-index: 999999 !important;
+}
+.inta-menu-pop.open { display: block !important; }
+.inta-menu-row {
+  display: flex !important; align-items: center !important; gap: 10px !important;
+  width: 100% !important; box-sizing: border-box !important;
+  border: none !important; background: transparent !important; color: inherit !important;
+  font-size: 13px !important; font-weight: 600 !important; font-family: inherit !important;
+  padding: 9px 10px !important; border-radius: 8px !important;
+  cursor: pointer !important; text-align: left !important; white-space: nowrap !important;
+}
+.inta-menu-row:hover { background: rgba(128,128,128,.18) !important; }
+.inta-menu-row .inta-ic-svg { width: 15px !important; height: 15px !important; }
+div[role="dialog"] .inta-menu-wrap { left: 10px !important; right: auto !important; }
+div[role="dialog"] .inta-menu-pop { left: 0 !important; right: auto !important; }
+
+/* per-post buttons (stack: download 10 / copy 54 / tags live in power.css) */
+.inta-dl, .inta-copy, .inta-reel-dl {
+  position: absolute !important;
+  z-index: 50000 !important;
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 50% !important;
+  border: none !important;
+  background: rgba(0,0,0,.7) !important;
+  color: #fff !important;
+  font-size: 16px !important;
+  cursor: pointer !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+}
+.inta-dl { top: 10px !important; right: 10px !important; }
+.inta-copy { top: 54px !important; right: 10px !important; }
+.inta-reel-dl { top: 10px !important; right: 10px !important; }
+.inta-dl:hover, .inta-copy:hover, .inta-reel-dl:hover { background: #0095F6 !important; }
+
+/* Left dock: reels holders + post modals (role=dialog) keep our stack
+   top-left — Instagram's like/comment rail owns the right edge there.
+   Feed articles keep the right stack (nothing overlaps below the header). */
+.inta-lefty > .inta-reel-dl { left: 10px !important; right: auto !important; }
+.inta-lefty > .inta-menu-wrap { left: 10px !important; right: auto !important; }
+.inta-lefty > .inta-menu-wrap > .inta-menu-pop { left: 0 !important; right: auto !important; }
+div[role="dialog"] .inta-dl, div[role="dialog"] .inta-copy,
+div[role="dialog"] .inta-tags, div[role="dialog"] .inta-linkcopy { left: 10px !important; right: auto !important; }
+
+/* mobile-like profile bar (AFTER header — never inside it) */
+#inta-profile-bar {
+  display: flex !important;
+  gap: 8px !important;
+  flex-wrap: wrap !important;
+  justify-content: center !important;
+  margin: 12px auto !important;
+  padding: 0 12px !important;
+  width: 100% !important;
+  max-width: 520px !important;
+  box-sizing: border-box !important;
+}
+/* IG-native buttons: neutral gray like Follow/Message, blue primary */
+#inta-profile-bar button {
+  border: none !important;
+  background: #EFEFEF !important;
+  color: #000 !important;
+  border-radius: 8px !important;
+  padding: 8px 12px !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+}
+#inta-profile-bar button:hover { background: #DBDBDB !important; }
+#inta-profile-bar button[data-pact="edit"] {
+  background: #0095F6 !important;
+  color: #fff !important;
+}
+#inta-profile-bar button[data-pact="edit"]:hover { background: #0081D6 !important; }
+html.inta-dark #inta-profile-bar button {
+  background: #363636 !important;
+  color: #f5f5f5 !important;
+}
+html.inta-dark #inta-profile-bar button:hover { background: #4a4a4a !important; }
+html.inta-dark #inta-profile-bar button[data-pact="edit"] {
+  background: #0095F6 !important;
+  color: #fff !important;
+}
+html.inta-dark #inta-profile-bar button[data-pact="edit"]:hover { background: #0081D6 !important; }
+
+/* Mobile top search pill (Explore/Home/Reels) — IG-native look */
+#inta-top-search {
+  width: 100% !important;
+  max-width: 520px !important;
+  margin: 12px auto 4px !important;
+  padding: 0 12px !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+  z-index: 10 !important;
+  display: flex !important;
+  gap: 8px !important;
+}
+#inta-top-search button[data-tact="open"] {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  border: none !important;
+  border-radius: 8px !important;
+  background: rgba(128,128,128,.18) !important;
+  color: inherit !important;
+  opacity: .85 !important;
+  padding: 10px 14px !important;
+  font-size: 14px !important;
+  cursor: pointer !important;
+  text-align: left !important;
+  pointer-events: auto !important;
+}
+#inta-top-search button[data-tact="open"]:hover { opacity: 1 !important; }
+#inta-top-search button[data-tact="create"] {
+  flex: 0 0 auto !important;
+  width: 42px !important;
+  border: none !important;
+  border-radius: 8px !important;
+  background: #0095F6 !important;
+  color: #fff !important;
+  font-size: 20px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  cursor: pointer !important;
+  pointer-events: auto !important;
+}
+#inta-top-search button[data-tact="create"]:hover { background: #0081D6 !important; }
+#inta-top-search .inta-top-ic { font-size: 16px !important; }
+
+/* Never degrade media: keep native resolution, only fit width */
+html.inta-mobile main video, html.inta-mobile main img {
+  max-width: 100% !important;
+}
+html.inta-mobile main video {
+  object-fit: contain !important;
+}
+.inta-avatar-badge {
+  position: absolute !important;
+  bottom: 4px !important;
+  right: 4px !important;
+  z-index: 50001 !important;
+  border: none !important;
+  border-radius: 12px !important;
+  background: rgba(0,0,0,.75) !important;
+  color: #fff !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  padding: 4px 8px !important;
+  cursor: pointer !important;
+}
+.inta-avatar-badge:hover { background: #0095F6 !important; }
+
+/* HD modal */
+#inta-modal { position: fixed !important; inset: 0 !important; z-index: 999999 !important; }
+#inta-modal .inta-modal-backdrop {
+  position: absolute !important; inset: 0 !important;
+  background: rgba(0,0,0,.8) !important;
+}
+#inta-modal .inta-modal-card {
+  position: absolute !important;
+  left: 50% !important; top: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  background: #fff !important;
+  border-radius: 16px !important;
+  padding: 12px !important;
+  max-width: min(92vw, 560px) !important;
+  width: max-content !important;
+  box-shadow: 0 20px 60px rgba(0,0,0,.5) !important;
+}
+#inta-modal .inta-modal-img {
+  display: block !important;
+  width: min(80vw, 480px) !important;
+  height: auto !important;
+  max-height: 70vh !important;
+  object-fit: contain !important;
+  border-radius: 12px !important;
+  background: #000 !important;
+}
+#inta-modal .inta-modal-row {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+  margin-top: 10px !important;
+  flex-wrap: wrap !important;
+}
+#inta-modal .inta-modal-user { font-size: 14px !important; font-weight: 700 !important; }
+#inta-modal .inta-modal-actions { display: flex !important; gap: 6px !important; }
+#inta-modal .inta-modal-actions button {
+  border: 1px solid #dbdbdb !important;
+  background: #efefef !important;
+  border-radius: 8px !important;
+  padding: 6px 10px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+}
+#inta-modal .inta-modal-actions button:hover { background: #e2e2e2 !important; }
+html.inta-dark #inta-modal .inta-modal-card {
+  background: #161616 !important;
+  color: #f5f5f5 !important;
+}
+html.inta-dark #inta-modal .inta-modal-actions button {
+  border-color: #333 !important;
+  background: #222 !important;
+  color: #f0f0f0 !important;
+}
+html.inta-dark #inta-modal .inta-modal-actions button:hover { background: #2c2c2c !important; }
+
+/* inline counters inside IG's own edit form (no box, native look) */
+.inta-inline-count {
+  font-size: 11px !important;
+  opacity: .55 !important;
+  text-align: right !important;
+  margin: 2px 0 8px !important;
+  color: inherit !important;
+}
+.inta-inline-count.inta-over { opacity: 1 !important; color: #d62976 !important; font-weight: 700 !important; }
+
+/* bio-links entry button (sits right under IG's mobile-only notice) */
+#inta-links-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  margin: 10px 0 !important;
+  border: none !important;
+  border-radius: 8px !important;
+  padding: 8px 16px !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  color: #fff !important;
+  background: #0095F6 !important;
+}
+#inta-links-btn:hover { background: #0081D6 !important; }
+
+/* bio-links modal */
+#inta-links-modal { position: fixed !important; inset: 0 !important; z-index: 999999 !important; }
+#inta-links-modal .inta-links-backdrop {
+  position: absolute !important; inset: 0 !important;
+  background: rgba(0,0,0,.8) !important;
+}
+#inta-links-modal .inta-links-card {
+  position: absolute !important;
+  left: 50% !important; top: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  width: min(92vw, 520px) !important;
+  max-height: 86vh !important;
+  overflow-y: auto !important;
+  background: #111 !important;
+  color: #f5f5f5 !important;
+  border: 1px solid rgba(255,255,255,.14) !important;
+  border-radius: 16px !important;
+  padding: 16px !important;
+  box-sizing: border-box !important;
+  box-shadow: 0 20px 60px rgba(0,0,0,.5) !important;
+  font-family: -apple-system, Segoe UI, Roboto, sans-serif !important;
+}
+#inta-links-modal .inta-links-head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+#inta-links-modal .inta-links-title { font-size: 15px !important; font-weight: 800 !important; }
+#inta-links-modal .inta-links-head button {
+  border: 1px solid rgba(255,255,255,.25) !important;
+  background: transparent !important;
+  color: inherit !important;
+  border-radius: 50% !important;
+  width: 30px !important;
+  height: 30px !important;
+  cursor: pointer !important;
+}
+#inta-links-modal .inta-links-sub { font-size: 12px !important; opacity: .65 !important; margin: 4px 0 12px !important; }
+#inta-links-modal .inta-links-list { display: flex !important; flex-direction: column !important; gap: 10px !important; }
+#inta-links-modal .inta-link-row { display: flex !important; gap: 8px !important; }
+#inta-links-modal .inta-link-row input {
+  border: 1px solid rgba(255,255,255,.2) !important;
+  background: rgba(255,255,255,.07) !important;
+  color: #fff !important;
+  border-radius: 10px !important;
+  padding: 9px 10px !important;
+  font-size: 13px !important;
+  outline: none !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+#inta-links-modal .inta-link-title { flex: 0 1 38% !important; }
+#inta-links-modal .inta-link-url { flex: 1 1 auto !important; }
+#inta-links-modal .inta-link-url.inta-bad { border-color: #e0245e !important; }
+#inta-links-modal .inta-link-del {
+  flex: 0 0 auto !important;
+  border: 1px solid rgba(255,255,255,.2) !important;
+  background: transparent !important;
+  border-radius: 10px !important;
+  padding: 0 10px !important;
+  cursor: pointer !important;
+  font-size: 14px !important;
+}
+#inta-links-modal .inta-link-del:hover { background: rgba(224,36,94,.25) !important; }
+#inta-links-modal .inta-links-add {
+  margin-top: 12px !important;
+  border: 1px dashed rgba(255,255,255,.3) !important;
+  background: transparent !important;
+  color: inherit !important;
+  border-radius: 10px !important;
+  padding: 9px !important;
+  width: 100% !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+}
+#inta-links-modal .inta-links-add:hover { background: rgba(255,255,255,.06) !important; }
+#inta-links-modal .inta-links-status { font-size: 12px !important; min-height: 18px !important; margin-top: 10px !important; opacity: .8 !important; }
+#inta-links-modal .inta-links-status.err { color: #ff7aa2 !important; opacity: 1 !important; }
+#inta-links-modal .inta-links-foot { display: flex !important; justify-content: flex-end !important; gap: 8px !important; margin-top: 8px !important; }
+#inta-links-modal .inta-links-foot button {
+  border: 1px solid rgba(255,255,255,.25) !important;
+  background: transparent !important;
+  color: inherit !important;
+  border-radius: 10px !important;
+  padding: 9px 16px !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+}
+#inta-links-modal .inta-links-foot button.primary {
+  border: none !important;
+  color: #fff !important;
+  background: linear-gradient(45deg, #fa7e1e, #d62976, #962fbf) !important;
+}
+
+/* zoom lens */
+#inta-lens {
+  position: absolute !important;
+  width: 320px !important;
+  height: 320px !important;
+  z-index: 999998 !important;
+  border: 3px solid #fff !important;
+  border-radius: 16px !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  box-shadow: 0 10px 40px rgba(0,0,0,.6) !important;
+  pointer-events: none !important;
+}
+
+/* toast — lifted clear of taskbar / download shelf, wraps on small PCs */
+#inta-toast {
+  position: fixed !important;
+  left: 50% !important;
+  bottom: 76px !important;
+  bottom: max(76px, calc(env(safe-area-inset-bottom, 0px) + 76px)) !important;
+  transform: translateX(-50%) translateY(20px) !important;
+  background: #111 !important;
+  color: #fff !important;
+  padding: 10px 18px !important;
+  border-radius: 20px !important;
+  font-size: 14px !important;
+  z-index: 1000000 !important;
+  opacity: 0 !important;
+  transition: all .25s ease !important;
+  pointer-events: none !important;
+  font-family: -apple-system, Segoe UI, Roboto, sans-serif !important;
+  max-width: 90vw !important;
+  max-width: min(90vw, 480px) !important;
+  overflow-wrap: anywhere !important;
+  text-align: center !important;
+}
+#inta-toast.show {
+  opacity: 1 !important;
+  transform: translateX(-50%) translateY(0) !important;
+}
+
+/* dark mode override */
+html.inta-dark body,
+html.inta-dark main {
+  background: #000 !important;
+}
+html.inta-dark article {
+  background: #111 !important;
+  border-color: #222 !important;
+}
+
+/* wide feed */
+html.inta-wide main > div > div {
+  max-width: 900px !important;
+}
+
+/* Mobile feel hook — NO width constraints (they scrambled grids/sidebars)
+   and NO body background override (forcing any body bg caused visible
+   seams/banding on home/feed against IG's own theme — the production
+   glitch reported). UA spoof makes IG serve mobile-appropriate content;
+   we keep desktop layout + theme pixel-identical and only add our pills.
+   (Keep the class itself: JS toggles it as a safe hook for our own UI.) */
+
+@media (max-width: 640px) {
+  #inta-lens { display: none !important; }
+  .inta-copy { top: 52px !important; }
+}
+
+/* Small / short screens: keep every floating control inside the viewport,
+   comfortably above the taskbar + download shelf on any PC. */
+@media (max-width: 640px) {
+  #inta-reel-menu { left: 12px !important; bottom: 64px !important; }
+  #inta-toast { font-size: 13px !important; padding: 9px 14px !important; bottom: 64px !important; }
+  .inta-menu-pop { min-width: 160px !important; }
+}
+@media (max-height: 620px) {
+  #inta-reel-menu { bottom: 56px !important; }
+  #inta-toast { bottom: 56px !important; }
+  .inta-menu-pop { max-height: calc(100vh - 120px) !important; }
+}
