@@ -1,0 +1,119 @@
+{
+  "models": {
+    "oak_tree": {
+      "path": "assets\\trees\\oak_tree.glb",
+      "category": "trees",
+      "vertices": 890,
+      "triangles": 1720
+    },
+    "pine_tree": {
+      "path": "assets\\trees\\pine_tree.glb",
+      "category": "trees",
+      "vertices": 98,
+      "triangles": 168
+    },
+    "birch_tree": {
+      "path": "assets\\trees\\birch_tree.glb",
+      "category": "trees",
+      "vertices": 732,
+      "triangles": 1360
+    },
+    "willow_tree": {
+      "path": "assets\\trees\\willow_tree.glb",
+      "category": "trees",
+      "vertices": 2264,
+      "triangles": 3840
+    },
+    "dead_tree": {
+      "path": "assets\\trees\\dead_tree.glb",
+      "category": "trees",
+      "vertices": 192,
+      "triangles": 320
+    },
+    "grass_sparse": {
+      "path": "assets\\grass\\grass_sparse.glb",
+      "category": "grass",
+      "vertices": 68,
+      "triangles": 32
+    },
+    "grass_medium": {
+      "path": "assets\\grass\\grass_medium.glb",
+      "category": "grass",
+      "vertices": 158,
+      "triangles": 62
+    },
+    "grass_dense": {
+      "path": "assets\\grass\\grass_dense.glb",
+      "category": "grass",
+      "vertices": 308,
+      "triangles": 112
+    },
+    "tall_grass": {
+      "path": "assets\\grass\\tall_grass.glb",
+      "category": "grass",
+      "vertices": 960,
+      "triangles": 800
+    },
+    "grass_meadow": {
+      "path": "assets\\grass\\grass_meadow.glb",
+      "category": "grass",
+      "vertices": 608,
+      "triangles": 212
+    },
+    "flat_terrain": {
+      "path": "assets\\terrain\\flat_terrain.glb",
+      "category": "terrain",
+      "vertices": 400,
+      "triangles": 722
+    },
+    "hilly_terrain": {
+      "path": "assets\\terrain\\hilly_terrain.glb",
+      "category": "terrain",
+      "vertices": 625,
+      "triangles": 1152
+    },
+    "rocky_terrain": {
+      "path": "assets\\terrain\\rocky_terrain.glb",
+      "category": "terrain",
+      "vertices": 400,
+      "triangles": 722
+    },
+    "sandy_terrain": {
+      "path": "assets\\terrain\\sandy_terrain.glb",
+      "category": "terrain",
+      "vertices": 400,
+      "triangles": 722
+    },
+    "flowers": {
+      "path": "assets\\vegetation\\flowers.glb",
+      "category": "vegetation",
+      "vertices": 3040,
+      "triangles": 5520
+    },
+    "tree_stump": {
+      "path": "assets\\vegetation\\tree_stump.glb",
+      "category": "vegetation",
+      "vertices": 186,
+      "triangles": 336
+    },
+    "log": {
+      "path": "assets\\vegetation\\log.glb",
+      "category": "vegetation",
+      "vertices": 272,
+      "triangles": 488
+    },
+    "mushroom": {
+      "path": "assets\\vegetation\\mushroom.glb",
+      "category": "vegetation",
+      "vertices": 204,
+      "triangles": 380
+    },
+    "dirt_ground": {
+      "path": "assets\\terrain\\dirt_ground.glb",
+      "category": "ground",
+      "vertices": 8,
+      "triangles": 12
+    }
+  },
+  "total_polygons": 18680
+}
