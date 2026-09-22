@@ -63,9 +63,13 @@ async function saveMedia(mediaUrl, filename) {
     say("Opened full quality in a new tab — long-press / right-click → Save.", "ok");
   }
 }
-function renderCard(data, auto, filename) {
+function renderCard(data, auto, filename, srcUrl) {
   try {
     result.hidden = false;
+    var looksVideo = /\/(reel|reels|tv)\//.test(String(srcUrl || ""));
+    if (looksVideo && data.type !== "video") {
+      say("Instagram exposed only the cover for this video — the MP4 track is hidden. Open the reel with the Gramiqo extension (it reads your logged-in session) for the full video.", "err");
+    }
     var t = data.thumbnail || (data.medias && data.medias[0] && data.medias[0].thumb) || "";
     if (t) { thumb.src = t; thumb.style.display = ""; } else { thumb.style.display = "none"; }
     title.textContent = data.title || (data.type === "video" ? "Video ready" : "Photo ready");
@@ -112,7 +116,7 @@ async function resolve(url, auto, filename) {
       return;
     }
     say(j.medias && j.medias.length > 1 ? j.medias.length + " files found — saving the best…" : "Found it — saving…", "ok");
-    renderCard(j, auto, filename);
+    renderCard(j, auto, filename, url);
   } catch (e) {
     say("Network hiccup — tap Download to retry.", "err");
   }

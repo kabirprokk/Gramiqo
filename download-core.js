@@ -151,44 +151,139 @@ function cleanMp4(u) {
   } catch { return ""; }
 }
 
+// Loose mp4 extractor for HTML/JSON blobs: wide windows, both key
+// orders, any escaping. Strict patterns silently miss the video track
+// (reel then resolves as JPG cover only) whenever Instagram re-escapes.
+function normPayload(t) {
+  // Instagram escapes slashes/entities inside JSON blobs (https:\/\/…,
+  // \u0026). Normalize ONCE so every pattern below sees plain URLs.
+  return String(t || "")
+    .replace(/\\\//g, "/")
+    .replace(/\\u0026/gi, "&")
+    .replace(/&amp;/g, "&");
+}
+function extractVideosText(text) {
+  const out = new Map(); // url -> width
+  const src = normPayload(text);
+  if (!src) return out;
+  try {
+    for (const m of src.matchAll(/"video_versions"\s*:\s*\[([\s\S]{0,40000}?)\]/g)) {
+      const block = m[1];
+      for (const v of block.matchAll(/"width"\s*:\s*(\d+)[^}]{0,600}?"url"\s*:\s*"([^"]+)"/g)) {
+        const u = cleanMp4(v[2]);
+        if (u) {
+          const w = Number(v[1]) || 0;
+          if (!out.has(u) || out.get(u) < w) out.set(u, w);
+        }
+      }
+      for (const v of block.matchAll(/"url"\s*:\s*"([^"]+?\.mp4[^"]*)"[^}]{0,600}?"width"\s*:\s*(\d+)/gi)) {
+        const u = cleanMp4(v[1]);
+        if (u) {
+          const w = Number(v[2]) || 0;
+          if (!out.has(u) || out.get(u) < w) out.set(u, w);
+        }
+      }
+      for (const v of block.matchAll(/"url"\s*:\s*"([^"]+?\.mp4[^"]*)"/gi)) {
+        const u = cleanMp4(v[1]);
+        if (u && !out.has(u)) out.set(u, 0);
+      }
+    }
+    for (const m of src.matchAll(/"video_url"\s*:\s*"([^"]+)"/g)) {
+      const u = cleanMp4(m[1]);
+      if (u && !out.has(u)) out.set(u, 720);
+    }
+    for (const m of src.matchAll(/video_url\\*"\s*:\s*\\*"([^"\\]+)/g)) {
+      const u = cleanMp4(m[1]);
+      if (u && !out.has(u)) out.set(u, 720);
+    }
+    for (const m of src.matchAll(/https?:\/\/(?:[^"'\s<>]*?\.)?(?:cdninstagram\.com|fbcdn\.net)[^"'\s<>]*?\.mp4[^"'\s<>]*/gi)) {
+      const u = cleanMp4(m[0]);
+      if (u && !out.has(u)) out.set(u, 0);
+    }
+  } catch {}
+  return out;
+}
+function bestVideo(map) {
+  let best = "", bestW = -1;
+  try {
+    for (const [u, w] of map) {
+      if (w >= bestW) { bestW = w; best = u; }
+    }
+  } catch {}
+  return best;
+}
+
+// Instant DOM scan: reel/post pages embed video_versions/video_url in
+// page scripts (server-rendered). Zero network, biggest rendition wins.
+function scanDomVideo() {
+  try {
+    const scripts = document.querySelectorAll("script");
+    let scanned = 0;
+    const found = new Map();
+    for (const s of scripts) {
+      let t = "";
+      try { t = s.textContent || ""; } catch { continue; }
+      if (!t || (t.indexOf("video_versions") < 0 && t.indexOf("video_url") < 0)) continue;
+      if (t.length > 3000000) continue;
+      scanned++;
+      for (const [u, w] of extractVideosText(t)) {
+        if (!found.has(u) || found.get(u) < w) found.set(u, w);
+      }
+      if (scanned >= 6) break;
+    }
+    return bestVideo(found);
+  } catch { return ""; }
+}
 // Progressive .mp4 via Instagram's own surfaces (what yt-dlp tries first):
-//  1. /p/<code>/embed/captioned/ HTML (contains video_url, no auth wall)
-//  2. /p/<code>/?__a=1&__d=dis JSON (needs session, has video_versions)
+//  0. page DOM scripts (instant, session context)
+//  1. reel page + embed variants HTML (video_url / video_versions)
+//  2. /p/<code>/?__a=1&__d=dis JSON (biggest video_versions)
 // Results cached per shortcode for the session.
 const progCache = new Map();
+async function fetchText(url, ms) {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), ms || 9000);
+    const res = await fetch(url, { credentials: "include", signal: ctrl.signal });
+    clearTimeout(t);
+    if (!res.ok) return "";
+    return await res.text();
+  } catch { return ""; }
+}
 async function fetchProgressiveMp4(shortcode) {
   const code = String(shortcode || "").replace(/\/$/, "");
   if (!code) return "";
   if (progCache.has(code)) return progCache.get(code) || "";
-  let found = "";
-  // 1. Embed page.
+  // 0. DOM first (free).
   try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 9000);
-    const res = await fetch("https://www.instagram.com/p/" + encodeURIComponent(code) + "/embed/captioned/", {
-      credentials: "include",
-      signal: ctrl.signal,
-    });
-    clearTimeout(t);
-    if (res.ok) {
-      const html = await res.text();
-      let m = html.match(/"video_url"\s*:\s*"([^"]+)"/) || html.match(/video_url\\*"\s*:\s*\\*"([^"\\]+)/);
-      if (m && m[1]) found = cleanMp4(m[1]);
-      if (!found) {
-        const m2 = html.match(/"video_versions"\s*:\s*\[([\s\S]{0,3000}?)\]/);
-        if (m2) {
-          const urls = [...m2[1].matchAll(/"url"\s*:\s*"([^"]+)"/g)].map((x) => cleanMp4(x[1])).filter(Boolean);
-          if (urls.length) found = urls[urls.length - 1];
-        }
-      }
-      if (!found) {
-        const m3 = html.match(/(https?:\/\/[^"'\s\\]+\.mp4[^"'\s\\]*)/);
-        if (m3) found = cleanMp4(m3[1]);
-      }
+    const dom = scanDomVideo();
+    if (dom && /^https?:\/\//.test(dom)) {
+      progCache.set(code, dom);
+      return dom;
     }
   } catch {}
+  const enc = encodeURIComponent(code);
+  const found = new Map();
+  const take = (text) => {
+    try {
+      for (const [u, w] of extractVideosText(text)) {
+        if (!found.has(u) || found.get(u) < w) found.set(u, w);
+      }
+    } catch {}
+  };
+  // 1. Reel page + embed variants, first video wins (ordered cheapest-first).
+  for (const u of [
+    "https://www.instagram.com/reel/" + enc + "/",
+    "https://www.instagram.com/p/" + enc + "/embed/captioned/",
+    "https://www.instagram.com/p/" + enc + "/embed/",
+    "https://www.instagram.com/reel/" + enc + "/embed/",
+  ]) {
+    const html = await fetchText(u, 9000);
+    if (html) take(html);
+    if (found.size) break;
+  }
   // 2. ?__a=1 JSON (authenticated, biggest video_versions).
-  if (!found) {
+  if (!found.size) {
     try {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 9000);
@@ -200,18 +295,20 @@ async function fetchProgressiveMp4(shortcode) {
       clearTimeout(t);
       if (res.ok) {
         const j = await res.json();
-        found = deepScanVideoUrl(j) || "";
+        const dj = deepScanVideoUrl(j);
+        if (dj) found.set(dj, 1080);
       }
     } catch {}
   }
+  const best = bestVideo(found);
   try {
-    progCache.set(code, found || "");
+    progCache.set(code, best || "");
     if (progCache.size > 40) {
       const first = progCache.keys().next().value;
       progCache.delete(first);
     }
   } catch {}
-  return found || "";
+  return best || "";
 }
 
 // Optional local yt-dlp bridge: POST {url, filename} to the companion
@@ -291,7 +388,7 @@ try {
     shortcodeFromUrl, pageShortcode, pageUrlForShortcode,
     ytdlpCommand, tryLocalBridge, fetchProgressiveMp4,
     deepScanVideoUrl, showProtectedFallback, copyYtDlp: copyTextRaw,
-    buildSiteUrl, openSiteDownloader,
+    buildSiteUrl, openSiteDownloader, scanDomVideo,
   };
 } catch {}
 })();

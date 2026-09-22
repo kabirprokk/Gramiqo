@@ -439,8 +439,21 @@ async function downloadVisibleMedia() {
   const m = getVisibleMedia();
   if (!m) return toast("Scroll to a photo/reel first");
   if (m.type !== "video") {
+    // Center fell on a poster image (reel not playing yet) — still get the
+    // full-quality video, not the JPG cover.
+    try {
+      const dl = gramiqoDl();
+      const code = reelCodeNear(m.el) || shortcodeHint(location.href);
+      if (dl && code) {
+        toast("Finding video…");
+        const prog = await dl.fetchProgressiveMp4(code);
+        if (prog && /^https?:\/\//.test(prog)) {
+          return downloadUrl(prog, sanitizeDlName(`gramiqo-video-${Date.now()}.mp4`));
+        }
+      }
+    } catch {}
     if (!m.url || m.url.startsWith("blob:")) return toast("Image still loading — wait a second");
-    return downloadUrl(m.url, sanitizeDlName(`gramiqo-image-${Date.now()}.jpg`));
+    return downloadUrl(hdUpgrade(m.url), sanitizeDlName(`gramiqo-image-${Date.now()}.jpg`));
   }
   // Video: element blob URLs are not savable — resolve the real .mp4 first.
   toast("Finding video…");
@@ -509,6 +522,12 @@ async function resolveDownloadUrl(video, hintLink) {
   try {
     const cur = video ? (video.currentSrc || video.src || "") : "";
     if (/^https?:\/\//.test(cur) && !cur.startsWith("blob:") && !/bytestart|byteend/i.test(cur)) return { url: cur, via: "direct" };
+    // Page-embedded video data (instant, no network): reel pages ship
+    // video_versions in their own scripts — biggest rendition wins.
+    try {
+      const dom = gramiqoDl()?.scanDomVideo?.();
+      if (dom && /^https?:\/\//.test(dom)) return { url: dom, via: "dom" };
+    } catch {}
     // Same-tab network memory is best, but verify freshness: the entry may
     // belong to a neighbouring reel that preloaded after this one.
     const remembered = await sendMsg({ type: "GRAMI_GET_MEDIA" });
@@ -602,14 +621,29 @@ function addMenuToPosts() {
       pop.appendChild(menuRow("download", "Download", async () => {
         const media = articleMedia(article);
         if (!media) return toast("No media found in this post");
+        const linkHint = articleLink(article) || location.href;
+        // VIDEO FIRST: reels often render only their poster <img> until played.
+        // Never save that poster as "the download" — resolve the full-quality
+        // .mp4 via the shortcode before falling back to JPG (photo posts only).
         if (media.type !== "video") {
+          toast("Finding video…");
+          try {
+            const dl = gramiqoDl();
+            const code = shortcodeHint(linkHint);
+            if (dl && code) {
+              const prog = await dl.fetchProgressiveMp4(code);
+              if (prog && /^https?:\/\//.test(prog)) {
+                return downloadUrl(prog, sanitizeDlName(`gramiqo-video-${Date.now()}.mp4`));
+              }
+            }
+          } catch {}
+          // No video track for this shortcode → true photo post: save full-res JPG.
           if (!media.url || media.url.startsWith("blob:")) return toast("Image still loading — wait a second");
           const ext = /\.png(\?|#|$)/i.test(media.url) ? "png" : /\.webp(\?|#|$)/i.test(media.url) ? "webp" : "jpg";
-          return downloadUrl(media.url, sanitizeDlName(`gramiqo-image-${Date.now()}.${ext}`));
+          return downloadUrl(hdUpgrade(media.url), sanitizeDlName(`gramiqo-image-${Date.now()}.${ext}`));
         }
         toast("Finding video…");
         const v = media.el || article.querySelector("video");
-        const linkHint = articleLink(article) || location.href;
         const fname = sanitizeDlName(`gramiqo-video-${Date.now()}.mp4`);
         // One-click local bridge first (if ytdlp-server.py is running it
         // saves instantly with zero paste). Null when not running — falls
@@ -1524,6 +1558,36 @@ function currentReelVideo() {
   } catch { return null; }
 }
 
+// Reel shortcode near an element: navigate only when every /reel/ link in
+// scope agrees on ONE code — never the wrong reel from a mixed container.
+// (Lets the /reels feed resolve full-quality .mp4 even when the page URL
+// itself carries no shortcode.)
+function reelCodeNear(el) {
+  try {
+    let node = el?.closest?.("article") || el?.parentElement || null;
+    let guard = 0;
+    while (node && guard < 8) {
+      const codes = new Set();
+      for (const a of node.querySelectorAll?.('a[href^="/reel/"]') || []) {
+        const m = (a.getAttribute("href") || "").match(/^\/reel\/([A-Za-z0-9_-]+)/);
+        if (m) codes.add(m[1]);
+      }
+      if (codes.size === 1) return [...codes][0];
+      if (node.tagName === "ARTICLE" || node.tagName === "MAIN") break;
+      node = node.parentElement;
+      guard++;
+    }
+  } catch {}
+  return "";
+}
+function reelHintFor(video) {
+  try {
+    const code = reelCodeNear(video) || shortcodeHint(location.href);
+    if (code) return "https://www.instagram.com/reel/" + code + "/";
+  } catch {}
+  return location.href;
+}
+
 function updateFloatingReelMenu() {
   try {
     let dock = document.getElementById("inta-reel-menu");
@@ -1564,17 +1628,18 @@ function updateFloatingReelMenu() {
       pop.appendChild(menuRow("download", "Download", async () => {
         toast("Finding video…");
         const v = currentReelVideo();
+        const hint = reelHintFor(v);
         const fname = sanitizeDlName(`gramiqo-reel-${Date.now()}.mp4`);
         try {
           const dl = gramiqoDl();
           if (dl) {
-            const bridged = await dl.tryLocalBridge(location.href, fname);
+            const bridged = await dl.tryLocalBridge(hint, fname);
             if (bridged && bridged.saved) { toast("Saved via local yt-dlp bridge!"); return; }
           }
         } catch {}
-        const r = await resolveDownloadUrl(v, location.href);
+        const r = await resolveDownloadUrl(v, hint);
         if (!r.url) {
-          if (r.protected) { protectedFallback(location.href, fname); return; }
+          if (r.protected) { protectedFallback(hint, fname); return; }
           return toast("Video still loading — wait a second");
         }
         downloadUrl(r.url, fname);

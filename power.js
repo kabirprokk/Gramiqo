@@ -155,6 +155,10 @@ async function resolveVideoUrl(video, hintLink) {
   try {
     const cur = video ? (video.currentSrc || video.src || "") : "";
     if (/^https?:\/\//.test(cur) && !cur.startsWith("blob:") && !/bytestart|byteend/i.test(cur)) return { url: cur, via: "direct" };
+    try {
+      const dom = gramiqoDlP()?.scanDomVideo?.();
+      if (dom && /^https?:\/\//.test(dom)) return { url: dom, via: "dom" };
+    } catch {}
     const remembered = await sendBg({ type: "GRAMI_GET_MEDIA" });
     if (remembered?.url && /^https?:\/\//.test(remembered.url) && !/bytestart|byteend/i.test(remembered.url)) return { url: remembered.url, via: "network" };
     const og = pageVideoUrl();
