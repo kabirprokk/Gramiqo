@@ -151,32 +151,39 @@ function gramiqoDlP() {
 // progressive embed/JSON (yt-dlp's first step).
 // Blob: MSE handles and DASH segments are reported protected, never saved
 // (they decode to corrupt files, so honesty beats a broken download).
+function diagP(tag, msg) { try { console.log("[Gramiqo:" + tag + "] " + msg); } catch {} }
 async function resolveVideoUrl(video, hintLink) {
-  try {
-    const cur = video ? (video.currentSrc || video.src || "") : "";
-    if (/^https?:\/\//.test(cur) && !cur.startsWith("blob:") && !/bytestart|byteend/i.test(cur)) return { url: cur, via: "direct" };
-    try {
-      const dom = gramiqoDlP()?.scanDomVideo?.();
-      if (dom && /^https?:\/\//.test(dom)) return { url: dom, via: "dom" };
-    } catch {}
-    const remembered = await sendBg({ type: "GRAMI_GET_MEDIA" });
-    if (remembered?.url && /^https?:\/\//.test(remembered.url) && !/bytestart|byteend/i.test(remembered.url)) return { url: remembered.url, via: "network" };
-    const og = pageVideoUrl();
-    if (og) return { url: og, via: "page" };
-    try {
-      const dl = gramiqoDlP();
-      const code = dl ? (dl.shortcodeFromUrl(hintLink || location.href) || dl.pageShortcode()) : "";
-      if (dl && code) {
-        const prog = await dl.fetchProgressiveMp4(code);
-        if (prog && /^https?:\/\//.test(prog)) return { url: prog, via: "progressive" };
-      }
-    } catch {}
-    if (remembered?.partial) return { url: "", via: "", protected: true };
-    if (cur && cur.startsWith("blob:")) return { url: "", via: "", protected: true };
-    if (cur) return { url: cur, via: "blob" };
-  } catch {}
-  return { url: "", via: "" };
-}
+   try {
+     const cur = video ? (video.currentSrc || video.src || "") : "";
+     diagP("power-resolve", "cur=" + (cur ? cur.slice(0, 50) : "EMPTY"));
+     if (/^https?:\/\//.test(cur) && !cur.startsWith("blob:") && !/bytestart|byteend/i.test(cur)) return { url: cur, via: "direct" };
+     try {
+       const dom = gramiqoDlP()?.scanDomVideo?.();
+       diagP("power-resolve", "dom=" + (dom ? dom.slice(0, 50) : "EMPTY"));
+       if (dom && /^https?:\/\//.test(dom)) return { url: dom, via: "dom" };
+     } catch {}
+     const remembered = await sendBg({ type: "GRAMI_GET_MEDIA" });
+     diagP("power-resolve", "remembered=" + (remembered ? JSON.stringify({url: remembered.url?.slice(0, 40), partial: remembered.partial}) : "null"));
+     if (remembered?.url && /^https?:\/\//.test(remembered.url) && !/bytestart|byteend/i.test(remembered.url)) return { url: remembered.url, via: "network" };
+     const og = pageVideoUrl();
+     diagP("power-resolve", "og=" + (og ? og.slice(0, 50) : "EMPTY"));
+     if (og) return { url: og, via: "page" };
+     try {
+       const dl = gramiqoDlP();
+       const code = dl ? (dl.shortcodeFromUrl(hintLink || location.href) || dl.pageShortcode()) : "";
+       diagP("power-resolve", "code=" + (code || "EMPTY") + " dl=" + !!dl);
+       if (dl && code) {
+         const prog = await dl.fetchProgressiveMp4(code);
+         diagP("power-resolve", "prog=" + (prog ? prog.slice(0, 50) : "EMPTY"));
+         if (prog && /^https?:\/\//.test(prog)) return { url: prog, via: "progressive" };
+       }
+     } catch {}
+     if (remembered?.partial) return { url: "", via: "", protected: true };
+     if (cur && cur.startsWith("blob:")) return { url: "", via: "", protected: true };
+     if (cur) return { url: cur, via: "blob" };
+   } catch {}
+   return { url: "", via: "" };
+ }
 
 function protectedFallbackP(hintLink, filename) {
   try {

@@ -518,41 +518,39 @@ function shortcodeHint(fallbackLink) {
   } catch {}
   try { return gramiqoDl()?.pageShortcode() || ""; } catch { return ""; }
 }
+function diag(tag, msg) { try { console.log("[Gramiqo:" + tag + "] " + msg); } catch {} }
 async function resolveDownloadUrl(video, hintLink) {
-  try {
-    const cur = video ? (video.currentSrc || video.src || "") : "";
-    if (/^https?:\/\//.test(cur) && !cur.startsWith("blob:") && !/bytestart|byteend/i.test(cur)) return { url: cur, via: "direct" };
-    // Page-embedded video data (instant, no network): reel pages ship
-    // video_versions in their own scripts — biggest rendition wins.
-    try {
-      const dom = gramiqoDl()?.scanDomVideo?.();
-      if (dom && /^https?:\/\//.test(dom)) return { url: dom, via: "dom" };
-    } catch {}
-    // Same-tab network memory is best, but verify freshness: the entry may
-    // belong to a neighbouring reel that preloaded after this one.
-    const remembered = await sendMsg({ type: "GRAMI_GET_MEDIA" });
-    if (remembered?.url && /^https?:\/\//.test(remembered.url) && !/bytestart|byteend/i.test(remembered.url)) return { url: remembered.url, via: "network" };
-    const og = pageVideoUrl();
-    if (og) return { url: og, via: "page" };
-    // Progressive .mp4 via Instagram's own embed/JSON (same first step
-    // yt-dlp uses) — rescues most "protected" blob:/DASH cases instantly,
-    // no extra software needed.
-    try {
-      const dl = gramiqoDl();
-      const code = shortcodeHint(hintLink);
-      if (dl && code) {
-        const prog = await dl.fetchProgressiveMp4(code);
-        if (prog && /^https?:\/\//.test(prog)) return { url: prog, via: "progressive" };
-      }
-    } catch {}
-    // Blob (MSE) is not downloadable — signal protected, never return it.
-    // Segment-only network memory is also protected (slices ≠ video).
-    if (remembered?.partial) return { url: "", via: "", protected: true };
-    if (cur && cur.startsWith("blob:")) return { url: "", via: "", protected: true };
-    if (cur) return { url: cur, via: "blob" };
-  } catch {}
-  return { url: "", via: "" };
-}
+   try {
+     const cur = video ? (video.currentSrc || video.src || "") : "";
+     diag("resolve", "cur=" + (cur ? cur.slice(0, 60) : "EMPTY"));
+     if (/^https?:\/\//.test(cur) && !cur.startsWith("blob:") && !/bytestart|byteend/i.test(cur)) return { url: cur, via: "direct" };
+     try {
+       const dom = gramiqoDl()?.scanDomVideo?.();
+       diag("resolve", "dom=" + (dom ? dom.slice(0, 60) : "EMPTY"));
+       if (dom && /^https?:\/\//.test(dom)) return { url: dom, via: "dom" };
+     } catch {}
+     const remembered = await sendMsg({ type: "GRAMI_GET_MEDIA" });
+     diag("resolve", "remembered=" + (remembered ? JSON.stringify({url: remembered.url?.slice(0, 40), partial: remembered.partial}) : "null"));
+     if (remembered?.url && /^https?:\/\//.test(remembered.url) && !/bytestart|byteend/i.test(remembered.url)) return { url: remembered.url, via: "network" };
+     const og = pageVideoUrl();
+     diag("resolve", "og=" + (og ? og.slice(0, 60) : "EMPTY"));
+     if (og) return { url: og, via: "page" };
+     try {
+       const dl = gramiqoDl();
+       const code = shortcodeHint(hintLink);
+       diag("resolve", "code=" + (code || "EMPTY"), "dl=" + !!dl);
+       if (dl && code) {
+         const prog = await dl.fetchProgressiveMp4(code);
+         diag("resolve", "prog=" + (prog ? prog.slice(0, 60) : "EMPTY"));
+         if (prog && /^https?:\/\//.test(prog)) return { url: prog, via: "progressive" };
+       }
+     } catch {}
+     if (remembered?.partial) return { url: "", via: "", protected: true };
+     if (cur && cur.startsWith("blob:")) return { url: "", via: "", protected: true };
+     if (cur) return { url: cur, via: "blob" };
+   } catch {}
+   return { url: "", via: "" };
+ }
 function protectedFallback(hintLink, filename) {
   try {
     const dl = gramiqoDl();
@@ -570,11 +568,12 @@ function protectedFallback(hintLink, filename) {
    Video/image downloads (resolveDownloadUrl + downloadUrl) are untouched. */
 
 function articleMedia(article) {
-  const video = article.querySelector("video");
-  const vUrl = video
-    ? video.currentSrc || video.src || video.querySelector("source")?.src || ""
-    : "";
-  // Return the element too: callers need it to resolve the real .mp4 via
+   const video = article.querySelector("video");
+   const vUrl = video
+     ? video.currentSrc || video.src || video.querySelector("source")?.src || ""
+     : "";
+   diag("articleMedia", "vUrl=" + (vUrl ? vUrl.slice(0, 50) : "EMPTY") + " video=" + !!video);
+   if (vUrl) return { type: "video", url: vUrl, el: video };
   // network memory (the blob: URL itself is never downloadable).
   if (vUrl) return { type: "video", url: vUrl, el: video };
   const imgs = [...article.querySelectorAll("img")]
@@ -626,17 +625,20 @@ function addMenuToPosts() {
         // Never save that poster as "the download" — resolve the full-quality
         // .mp4 via the shortcode before falling back to JPG (photo posts only).
         if (media.type !== "video") {
-          toast("Finding video…");
-          try {
-            const dl = gramiqoDl();
-            const code = shortcodeHint(linkHint);
-            if (dl && code) {
-              const prog = await dl.fetchProgressiveMp4(code);
-              if (prog && /^https?:\/\//.test(prog)) {
-                return downloadUrl(prog, sanitizeDlName(`gramiqo-video-${Date.now()}.mp4`));
-              }
-            }
-          } catch {}
+           diag("feed-dl", "type=image media.url=" + (media.url ? media.url.slice(0, 50) : "EMPTY"));
+           toast("Finding video…");
+           try {
+             const dl = gramiqoDl();
+             const code = shortcodeHint(linkHint);
+             diag("feed-dl", "code=" + (code || "EMPTY") + " dl=" + !!dl);
+             if (dl && code) {
+               const prog = await dl.fetchProgressiveMp4(code);
+               diag("feed-dl", "prog=" + (prog ? prog.slice(0, 50) : "EMPTY"));
+               if (prog && /^https?:\/\//.test(prog)) {
+                 return downloadUrl(prog, sanitizeDlName(`gramiqo-video-${Date.now()}.mp4`));
+               }
+             }
+           } catch {}
           // No video track for this shortcode → true photo post: save full-res JPG.
           if (!media.url || media.url.startsWith("blob:")) return toast("Image still loading — wait a second");
           const ext = /\.png(\?|#|$)/i.test(media.url) ? "png" : /\.webp(\?|#|$)/i.test(media.url) ? "webp" : "jpg";

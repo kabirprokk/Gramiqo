@@ -200,10 +200,11 @@ function extractVideosText(text) {
       const u = cleanMp4(m[0]);
       if (u && !out.has(u)) out.set(u, 0);
     }
-  } catch {}
-  return out;
-}
-function bestVideo(map) {
+   } catch {}
+   try { if (out.size) console.log("[Gramiqo:extract] found=" + out.size + " urls"); } catch {}
+   return out;
+ }
+ function bestVideo(map) {
   let best = "", bestW = -1;
   try {
     for (const [u, w] of map) {
@@ -251,65 +252,69 @@ async function fetchText(url, ms) {
   } catch { return ""; }
 }
 async function fetchProgressiveMp4(shortcode) {
-  const code = String(shortcode || "").replace(/\/$/, "");
-  if (!code) return "";
-  if (progCache.has(code)) return progCache.get(code) || "";
-  // 0. DOM first (free).
-  try {
-    const dom = scanDomVideo();
-    if (dom && /^https?:\/\//.test(dom)) {
-      progCache.set(code, dom);
-      return dom;
-    }
-  } catch {}
-  const enc = encodeURIComponent(code);
-  const found = new Map();
-  const take = (text) => {
-    try {
-      for (const [u, w] of extractVideosText(text)) {
-        if (!found.has(u) || found.get(u) < w) found.set(u, w);
-      }
-    } catch {}
-  };
-  // 1. Reel page + embed variants, first video wins (ordered cheapest-first).
-  for (const u of [
-    "https://www.instagram.com/reel/" + enc + "/",
-    "https://www.instagram.com/p/" + enc + "/embed/captioned/",
-    "https://www.instagram.com/p/" + enc + "/embed/",
-    "https://www.instagram.com/reel/" + enc + "/embed/",
-  ]) {
-    const html = await fetchText(u, 9000);
-    if (html) take(html);
-    if (found.size) break;
-  }
-  // 2. ?__a=1 JSON (authenticated, biggest video_versions).
-  if (!found.size) {
-    try {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 9000);
-      const res = await fetch("https://www.instagram.com/p/" + encodeURIComponent(code) + "/?__a=1&__d=dis", {
-        credentials: "include",
-        headers: { "x-ig-app-id": IG_APP_ID },
-        signal: ctrl.signal,
-      });
-      clearTimeout(t);
-      if (res.ok) {
-        const j = await res.json();
-        const dj = deepScanVideoUrl(j);
-        if (dj) found.set(dj, 1080);
-      }
-    } catch {}
-  }
-  const best = bestVideo(found);
-  try {
-    progCache.set(code, best || "");
-    if (progCache.size > 40) {
-      const first = progCache.keys().next().value;
-      progCache.delete(first);
-    }
-  } catch {}
-  return best || "";
-}
+   const code = String(shortcode || "").replace(/\/$/, "");
+   if (!code) return "";
+   if (progCache.has(code)) return progCache.get(code) || "";
+   // 0. DOM first (free).
+   try {
+     const dom = scanDomVideo();
+     try { console.log("[Gramiqo:prog] code=" + code + " dom=" + (dom ? dom.slice(0, 40) : "EMPTY")); } catch {}
+     if (dom && /^https?:\/\//.test(dom)) {
+       progCache.set(code, dom);
+       return dom;
+     }
+   } catch {}
+   const enc = encodeURIComponent(code);
+   const found = new Map();
+   const take = (text) => {
+     try {
+       for (const [u, w] of extractVideosText(text)) {
+         if (!found.has(u) || found.get(u) < w) found.set(u, w);
+       }
+     } catch {}
+   };
+   // 1. Reel page + embed variants, first video wins (ordered cheapest-first).
+   for (const u of [
+     "https://www.instagram.com/reel/" + enc + "/",
+     "https://www.instagram.com/p/" + enc + "/embed/captioned/",
+     "https://www.instagram.com/p/" + enc + "/embed/",
+     "https://www.instagram.com/reel/" + enc + "/embed/",
+   ]) {
+     try { console.log("[Gramiqo:prog] fetching=" + u.slice(0, 60)); } catch {}
+     const html = await fetchText(u, 9000);
+     if (html) take(html);
+     if (found.size) break;
+   }
+   try { console.log("[Gramiqo:prog] found.size=" + found.size + " best=" + (bestVideo(found) ? bestVideo(found).slice(0, 40) : "EMPTY")); } catch {}
+   // 2. ?__a=1 JSON (authenticated, biggest video_versions).
+   if (!found.size) {
+     try {
+       const ctrl = new AbortController();
+       const t = setTimeout(() => ctrl.abort(), 9000);
+       const res = await fetch("https://www.instagram.com/p/" + encodeURIComponent(code) + "/?__a=1&__d=dis", {
+         credentials: "include",
+         headers: { "x-ig-app-id": IG_APP_ID },
+         signal: ctrl.signal,
+       });
+       clearTimeout(t);
+       if (res.ok) {
+         const j = await res.json();
+         const dj = deepScanVideoUrl(j);
+         if (dj) found.set(dj, 1080);
+       }
+     } catch {}
+   }
+   const best = bestVideo(found);
+   try { console.log("[Gramiqo:prog] final=" + (best ? best.slice(0, 60) : "EMPTY")); } catch {}
+   try {
+     progCache.set(code, best || "");
+     if (progCache.size > 40) {
+       const first = progCache.keys().next().value;
+       progCache.delete(first);
+     }
+   } catch {}
+   return best || "";
+ }
 
 // Optional local yt-dlp bridge: POST {url, filename} to the companion
 // server (ytdlp-server.py). 1.2s timeout — never blocks the normal flow.
