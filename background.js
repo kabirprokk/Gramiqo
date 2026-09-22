@@ -6,25 +6,42 @@ const HINT_ID = 1002; // client-hints rule: isolated ID so a rejection can't kil
 const SPOOF_ID = "inta-spoof"; // page-world navigator spoof (spoof.js)
 const IPHONE_UA =
   "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
+// Covers apex instagram.com + any subdomain (old urlFilter missed apex).
+const IG_REGEX = "^https://([^/]*\\.)?instagram\\.com/";
 
 // --- downloads (single + bulk queue) ---
 const dlQueue = [];
 let dlActive = false;
+const MEDIA_TTL_MS = 90 * 1000; // CDN URLs expire fast; stale URLs download the wrong reel
+const SEGMENT_RE = /bytestart|byteend/i;
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg) return false;
+  if (msg.type === "GRAMI_PING" || msg.type === "INTA_PING") {
+    sendResponse({ ok: true, ver: "1.1.7" });
+    return false;
+  }
   if (msg.type === "GRAMI_GET_MEDIA" || msg.type === "INTA_GET_MEDIA") {
     // Best direct video file seen on this tab (beats blob:/protected URLs).
     // Prefer full progressive files over DASH range segments: a segment URL
     // (bytestart/byteend) only yields a slice of bytes, which audio/video
     // decode can't use — so rank full files first, newest wins ties.
+    // Segments are NEVER returned as downloadable: they produce broken files,
+    // so we report them as protected instead of lying with a corrupt save.
     try {
+      pruneTab(sender?.tab?.id);
       const arr = mediaByTab.get(sender?.tab?.id) || [];
       let best = null;
       for (const it of arr) {
         if (!best || it.rank > best.rank || (it.rank === best.rank && it.at >= best.at)) best = it;
       }
-      sendResponse({ ok: true, url: best ? best.url : "" });
+      if (!best) {
+        sendResponse({ ok: true, url: "", partial: false });
+      } else if (best.rank <= 0 || SEGMENT_RE.test(best.url)) {
+        sendResponse({ ok: true, url: "", partial: true, reason: "segment-only" });
+      } else {
+        sendResponse({ ok: true, url: best.url, partial: false });
+      }
     } catch {
       try { sendResponse({ ok: false, url: "" }); } catch {}
     }
@@ -38,14 +55,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // async response
   }
   if (msg.type === "GRAMI_DOWNLOAD_MANY" || msg.type === "INTA_DOWNLOAD_MANY") {
-    const items = Array.isArray(msg.items) ? msg.items.slice(0, 20) : [];
+    const items = Array.isArray(msg.items) ? msg.items.slice(0, 12) : [];
     (async () => {
       let ok = 0, fail = 0;
+      const errors = [];
       for (const it of items) {
         try { await queueDownload(it.url, it.filename); ok++; }
-        catch { fail++; }
+        catch (e) { fail++; if (errors.length < 3) errors.push(String((e && e.message) || e)); }
       }
-      sendResponse({ ok: true, downloaded: ok, failed: fail });
+      sendResponse({ ok: true, downloaded: ok, failed: fail, errors });
     })();
     return true;
   }
@@ -54,7 +72,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 function queueDownload(url, filename) {
   return new Promise((resolve, reject) => {
-    dlQueue.push({ url, filename, resolve, reject });
+    dlQueue.push({ url, filename, resolve, reject, tries: 0 });
     pumpQueue();
   });
 }
@@ -65,38 +83,71 @@ function pumpQueue() {
   if (!job) return;
   dlActive = true;
   const url = String(job.url || "");
-  if (!/^https?:\/\//.test(url)) {
+  // chrome.downloads can save https/http + data: URLs. blob: URLs are
+  // renderer-scoped (page blob / MediaSource) and can NEVER be saved from
+  // the service worker — fail fast with a clear reason so the content
+  // script shows "protected" instead of hanging.
+  if (/^blob:/i.test(url)) {
+    dlActive = false;
+    job.reject(new Error("blob-not-downloadable"));
+    setTimeout(pumpQueue, 50);
+    return;
+  }
+  if (!/^https?:\/\//i.test(url) && !/^data:(image|video|audio)\//i.test(url)) {
     dlActive = false;
     job.reject(new Error("bad-url"));
-    pumpQueue();
+    setTimeout(pumpQueue, 50);
     return;
   }
   const filename = sanitizeFilename(
-    job.filename || `gramiqo-${Date.now()}.${guessExt(url)}`
+    job.filename || `gramiqo-${Date.now()}.${guessExt(url, job.filename)}`
   );
   chrome.downloads
     .download({ url, filename, saveAs: false, conflictAction: "uniquify" })
     .then(
-      () => { dlActive = false; job.resolve(); setTimeout(pumpQueue, 600); },
-      (err) => { dlActive = false; job.reject(err); setTimeout(pumpQueue, 600); }
+      () => { dlActive = false; job.resolve(); setTimeout(pumpQueue, 350); },
+      (err) => {
+        // One retry for transient network failures (expiring CDN URLs).
+        const msg = String((err && err.message) || err || "");
+        if (job.tries < 1 && /network|interrupted|timed? ?out/i.test(msg)) {
+          job.tries += 1;
+          dlQueue.unshift(job);
+          dlActive = false;
+          setTimeout(pumpQueue, 900);
+          return;
+        }
+        dlActive = false;
+        job.reject(err);
+        setTimeout(pumpQueue, 350);
+      }
     );
 }
 
 function sanitizeFilename(name) {
-  return String(name)
+  let s = String(name || "")
     .replace(/[\\/:*?"<>|#]+/g, "-")
     .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[.-]+|[.-]+$/g, "")
     .slice(0, 120);
+  if (!s) s = `gramiqo-${Date.now()}.jpg`;
+  // Guarantee an extension so the OS opens the file correctly.
+  if (!/\.[a-z0-9]{2,5}$/i.test(s)) s += ".jpg";
+  return s;
 }
 
-function guessExt(url) {
+function guessExt(url, filenameHint) {
   try {
-    const clean = String(url).split("?")[0].toLowerCase();
-    if (clean.includes(".mp4")) return "mp4";
-    if (clean.includes(".webm")) return "webm";
-    if (clean.includes(".mov")) return "mov";
-    if (clean.includes(".png")) return "png";
-    if (clean.includes(".webp")) return "webp";
+    const hint = String(filenameHint || "").toLowerCase();
+    if (/\.(mp4|mov|m4v|webm|mp3|m4a|aac)$/.test(hint)) return hint.split(".").pop();
+    if (/\.(png|webp|jpg|jpeg)$/.test(hint)) return hint.split(".").pop();
+    const clean = String(url).split("?")[0].split("#")[0].toLowerCase();
+    if (/\.(mp4|mov|m4v|webm)$/.test(clean)) return clean.split(".").pop();
+    if (/\.(png|webp)$/.test(clean)) return clean.split(".").pop();
+    if (/mime=video|video_dash|\/dash\//i.test(String(url))) return "mp4";
+    if (/mime=audio/i.test(String(url))) return "m4a";
+    // Extension-less fbcdn video URLs are still video — never default them to jpg.
+    if (/fbcdn\.net\/v\//i.test(String(url))) return "mp4";
     return "jpg";
   } catch {
     return "jpg";
@@ -123,6 +174,8 @@ function looksLikeVideoFile(u) {
     if (s.includes("bytestart") || s.includes("byteend")) return true;
     if (s.includes("mime=video") || s.includes("mime=audio")) return true;
     if (s.includes("/dash/") || s.includes("dash_") || s.includes("video_dash")) return true;
+    // Extension-less fbcdn video version URLs (v/t51..., /v/t66...).
+    if (/fbcdn\.net\/v\//.test(s)) return true;
     return false;
   } catch {
     return false;
@@ -140,6 +193,15 @@ function rankMediaUrl(u) {
     return 0;
   }
 }
+function pruneTab(tabId) {
+  try {
+    const arr = mediaByTab.get(tabId);
+    if (!arr) return;
+    const now = Date.now();
+    const fresh = arr.filter((it) => now - it.at < MEDIA_TTL_MS);
+    if (fresh.length !== arr.length) mediaByTab.set(tabId, fresh);
+  } catch {}
+}
 function storeMediaUrl(tabId, rawUrl) {
   try {
     const u = String(rawUrl || "").split("#")[0];
@@ -152,7 +214,7 @@ function storeMediaUrl(tabId, rawUrl) {
     }
     if (arr.length && arr[arr.length - 1].url === u) return;
     arr.push({ url: u, at: Date.now(), rank: rankMediaUrl(u) });
-    while (arr.length > 10) arr.shift();
+    while (arr.length > 12) arr.shift();
   } catch {}
 }
 function rememberMedia(details) {
@@ -204,6 +266,13 @@ try {
   chrome.tabs?.onRemoved?.addListener((tabId) => {
     try { mediaByTab.delete(tabId); } catch {}
   });
+  // Navigation = stale video URLs. Drop them so the next download can't
+  // silently save the PREVIOUS reel's file (the classic wrong-file bug).
+  chrome.tabs?.onUpdated?.addListener((tabId, info) => {
+    try {
+      if (info.status === "loading" || info.url) mediaByTab.delete(tabId);
+    } catch {}
+  });
 } catch {}
 
 // --- Mobile-Mode: UA rule + client-hints rule + page-world spoof script ---
@@ -232,7 +301,7 @@ async function applyMobileMode() {
                 ],
               },
               condition: {
-                urlFilter: "|https://*.instagram.com/*",
+                regexFilter: IG_REGEX,
                 resourceTypes: ["main_frame"],
               },
             },
@@ -264,7 +333,7 @@ async function applyMobileMode() {
                   ],
                 },
                 condition: {
-                  urlFilter: "|https://*.instagram.com/*",
+                  regexFilter: IG_REGEX,
                   resourceTypes: ["main_frame"],
                 },
               },

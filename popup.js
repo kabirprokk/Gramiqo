@@ -105,11 +105,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     window.close();
   });
 
-  // Mobile-Mode needs a hard reload to take effect (UA is read on page load)
+  // Mobile-Mode needs a hard reload to take effect (UA is read on page load).
+  // Delay the reload so the storage write above reaches the background
+  // worker first — otherwise the tab reloads BEFORE the DNR rule applies
+  // and the toggle looks broken until a second manual reload.
   document.getElementById("mobileMode")?.addEventListener("change", async () => {
     try {
+      await new Promise((r) => setTimeout(r, 450));
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.url?.includes("instagram.com")) chrome.tabs.reload(tab.id);
+      if (tab?.url?.includes("instagram.com") && tab.id != null) chrome.tabs.reload(tab.id);
     } catch {}
   });
 });

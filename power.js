@@ -96,12 +96,131 @@ function toast(msg) {
   } catch {}
 }
 
-function downloadUrl(url, filename) {
-  if (!url || url.startsWith("blob:")) return toast("Media still loading — wait a sec");
+function sanitizeDlName(name, fallbackExt) {
+  let s = String(name || "")
+    .replace(/[\\/:*?"<>|#]+/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 120);
+  if (!/\.[a-z0-9]{2,5}$/i.test(s)) s += "." + (fallbackExt || "jpg");
+  return s;
+}
+
+function sendBg(msg) {
+  return new Promise((resolve) => {
+    let done = false;
+    const timer = setTimeout(() => {
+      if (!done) {
+        done = true;
+        resolve(null);
+      }
+    }, 5000);
+    try {
+      chrome.runtime.sendMessage(msg, (res) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        if (chrome.runtime.lastError) resolve(null);
+        else resolve(res || null);
+      });
+    } catch {
+      if (!done) {
+        done = true;
+        clearTimeout(timer);
+        resolve(null);
+      }
+    }
+  });
+}
+
+function pageVideoUrl() {
   try {
-    chrome.runtime.sendMessage({ type: "GRAMI_DOWNLOAD", url, filename }, (res) => {
-      if (chrome.runtime.lastError || !res?.ok) toast("Download blocked — right-click > Save");
-      else toast("Downloading…");
+    const p = location.pathname || "";
+    if (!/^\/p\/[^/]+\/?/.test(p) && !/^\/reel\/[^/]+\/?/.test(p) && !/\/stories\//.test(p)) return "";
+    const meta = document.querySelector('meta[property="og:video"], meta[property="og:video:secure_url"]');
+    const u = meta?.getAttribute("content") || meta?.content || "";
+    return /^https?:\/\//.test(u) ? u : "";
+  } catch { return ""; }
+}
+
+function gramiqoDlP() {
+  try { return window.GramiqoDl || null; } catch { return null; }
+}
+
+// Same resolver as content.js: direct https → network .mp4 → og:video →
+// progressive embed/JSON (yt-dlp's first step).
+// Blob: MSE handles and DASH segments are reported protected, never saved
+// (they decode to corrupt files, so honesty beats a broken download).
+async function resolveVideoUrl(video, hintLink) {
+  try {
+    const cur = video ? (video.currentSrc || video.src || "") : "";
+    if (/^https?:\/\//.test(cur) && !cur.startsWith("blob:") && !/bytestart|byteend/i.test(cur)) return { url: cur, via: "direct" };
+    const remembered = await sendBg({ type: "GRAMI_GET_MEDIA" });
+    if (remembered?.url && /^https?:\/\//.test(remembered.url) && !/bytestart|byteend/i.test(remembered.url)) return { url: remembered.url, via: "network" };
+    const og = pageVideoUrl();
+    if (og) return { url: og, via: "page" };
+    try {
+      const dl = gramiqoDlP();
+      const code = dl ? (dl.shortcodeFromUrl(hintLink || location.href) || dl.pageShortcode()) : "";
+      if (dl && code) {
+        const prog = await dl.fetchProgressiveMp4(code);
+        if (prog && /^https?:\/\//.test(prog)) return { url: prog, via: "progressive" };
+      }
+    } catch {}
+    if (remembered?.partial) return { url: "", via: "", protected: true };
+    if (cur && cur.startsWith("blob:")) return { url: "", via: "", protected: true };
+    if (cur) return { url: cur, via: "blob" };
+  } catch {}
+  return { url: "", via: "" };
+}
+
+function protectedFallbackP(hintLink, filename) {
+  try {
+    const dl = gramiqoDlP();
+    if (dl) {
+      const code = dl.shortcodeFromUrl(hintLink || location.href) || dl.pageShortcode();
+      const pageUrl = code ? dl.pageUrlForShortcode(code) : String(hintLink || location.href);
+      dl.showProtectedFallback(pageUrl, filename || `gramiqo-${Date.now()}.mp4`);
+      return;
+    }
+  } catch {}
+  toast("Can't download this video (protected stream)");
+}
+
+async function downloadVideoEl(video, filename, hintLink) {
+  toast("Finding video…");
+  const fname = sanitizeDlName(filename || `gramiqo-video-${Date.now()}.mp4`, "mp4");
+  const link = hintLink || location.href;
+  try {
+    const dl = gramiqoDlP();
+    if (dl) {
+      const bridged = await dl.tryLocalBridge(link, fname);
+      if (bridged && bridged.saved) { toast("Saved via local yt-dlp bridge!"); return; }
+    }
+  } catch {}
+  const r = await resolveVideoUrl(video, link);
+  if (!r.url) {
+    if (r.protected) { protectedFallbackP(link, fname); return; }
+    else toast("Video still loading — wait a sec");
+    return;
+  }
+  downloadUrl(r.url, fname);
+}
+
+function downloadUrl(url, filename) {
+  if (!url) return toast("Media still loading — wait a sec");
+  if (url.startsWith("blob:")) return toast("Can't download this video (protected stream)");
+  const safeName = sanitizeDlName(filename || `gramiqo-${Date.now()}.jpg`);
+  toast("Downloading…");
+  try {
+    chrome.runtime.sendMessage({ type: "GRAMI_DOWNLOAD", url, filename: safeName }, (res) => {
+      if (chrome.runtime.lastError || !res?.ok) {
+        const err = String(res?.error || chrome.runtime.lastError?.message || "");
+        if (/blob/i.test(err)) toast("Can't download this video (protected stream)");
+        else if (/bad-url/i.test(err)) toast("Can't download this link");
+        else toast("Download blocked — right-click > Save");
+      }
+      // Success already announced — stay quiet.
     });
   } catch { toast("Download unavailable"); }
 }
@@ -135,13 +254,15 @@ function storySaverTick() {
   btn.addEventListener("click", (e) => {
     e.preventDefault(); e.stopPropagation();
     if (target.tagName === "VIDEO") {
-      const url = target.currentSrc || target.src || "";
-      if (!url) return toast("Video still loading");
-      downloadUrl(url, `insta-story-${Date.now()}.mp4`);
+      // Stories are almost always blob:/MSE — resolve the real .mp4 via
+      // network memory → og:video → progressive embed/JSON instead of
+      // handing background an unsavable blob:.
+      downloadVideoEl(target, `gramiqo-story-${Date.now()}.mp4`, location.href);
     } else {
       const url = target.currentSrc || target.src || "";
-      if (!url) return toast("Image still loading");
-      downloadUrl(url, `insta-story-${Date.now()}.jpg`);
+      if (!url || url.startsWith("blob:")) return toast("Image still loading");
+      const ext = /\.png(\?|#|$)/i.test(url) ? "png" : /\.webp(\?|#|$)/i.test(url) ? "webp" : "jpg";
+      downloadUrl(url, sanitizeDlName(`gramiqo-story-${Date.now()}.${ext}`, ext));
     }
   });
   holder.appendChild(btn);
@@ -167,11 +288,13 @@ function reelsTick() {
       <button type="button" data-r="mute" title="Mute/unmute">${ic("volume", 14)}</button>
       <button type="button" data-r="auto" title="Auto-next reel">${ic("next", 14)}</button>
       <button type="button" data-r="link" title="Copy reel link">${ic("link", 14)}</button>`;
+    for (const t of ["pointerdown", "mousedown", "touchstart"]) {
+      bar.addEventListener(t, (e) => { try { e.stopPropagation(); } catch {} }, true);
+    }
     bar.addEventListener("click", (e) => {
       const b = e.target.closest?.("[data-r]");
       if (!b) return;
-      e.preventDefault(); e.stopPropagation();
-      const act = b.dataset.r;
+      e.preventDefault(); e.stopPropagation();      const act = b.dataset.r;
       if (act === "speed") {
         const steps = [1, 1.25, 1.5, 2];
         st.speed = steps[(steps.indexOf(st.speed) + 1) % steps.length] || 1;
@@ -444,22 +567,44 @@ function bulkTick() {
   updateBulkLabel();
 }
 
+function normGridSrc(src) {
+  // Dedupe across sizes: same photo with ?w=300 vs ?w=1080 is one file.
+  try {
+    const u = new URL(String(src));
+    u.searchParams.delete("w");
+    u.searchParams.delete("h");
+    return u.toString().replace(/s\d+x\d+/g, "s1080x1080");
+  } catch {
+    return String(src || "").replace(/s\d+x\d+/g, "s1080x1080");
+  }
+}
+
 function visibleGridImages() {
   const imgs = [...document.querySelectorAll("main img")].filter((i) => {
     try {
+      if (i.closest("#inta-top-search, #inta-settings, #inta-palette, #inta-search-overlay")) return false;
+      const src = i.currentSrc || i.src || "";
+      if (/emoji|sprite|s150x150.*profile|profile_pic/i.test(src)) return false;
       const r = i.getBoundingClientRect();
       return r.width > 150 && r.height > 150 && i.naturalWidth > 300 && r.top > -200 && r.top < window.innerHeight + 200;
     } catch { return false; }
   });
-  // dedupe by src, biggest first
+  // dedupe by normalized src, biggest first
   const seen = new Set();
   const out = [];
   imgs.sort((a, b) => b.naturalWidth - a.naturalWidth);
   for (const i of imgs) {
-    const src = i.currentSrc || i.src;
-    if (!src || seen.has(src)) continue;
-    seen.add(src);
-    out.push(src.replace(/s\d+x\d+/g, "s1080x1080"));
+    const raw = i.currentSrc || i.src;
+    if (!raw || !/^https?:\/\//.test(raw)) continue;
+    const key = normGridSrc(raw);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const full = /^https?:\/\//.test(key) ? key : raw;
+    // Upgrade to full-res only on CDN hosts (signed URLs break otherwise).
+    const hi = /cdninstagram\.com|fbcdn\.net/i.test(full)
+      ? full.replace(/s\d+x\d+/g, "s1080x1080")
+      : full;
+    out.push(hi);
     if (out.length >= 12) break;
   }
   return out;
@@ -480,10 +625,16 @@ function bulkSave(e) {
   try {
     chrome.runtime.sendMessage({
       type: "GRAMI_DOWNLOAD_MANY",
-      items: urls.map((url, i) => ({ url, filename: `insta-bulk-${Date.now()}-${i + 1}.jpg` })),
+      items: urls.map((url, i) => {
+        const ext = /\.png(\?|#|$)/i.test(url) ? "png" : /\.webp(\?|#|$)/i.test(url) ? "webp" : "jpg";
+        return { url, filename: sanitizeDlName(`gramiqo-bulk-${Date.now()}-${i + 1}.${ext}`, ext) };
+      }),
     }, (res) => {
       if (chrome.runtime.lastError) return toast("Bulk blocked — try single download");
-      toast(`Saved ${res?.downloaded ?? urls.length}/${urls.length}`);
+      const ok = res?.downloaded ?? urls.length;
+      const fail = res?.failed ?? 0;
+      if (fail > 0) toast(`Saved ${ok}/${urls.length} (some protected)`);
+      else toast(`Saved ${ok}/${urls.length}`);
     });
   } catch { toast("Bulk save unavailable"); }
 }
@@ -1630,9 +1781,37 @@ function reelCodeForVideo(video) {
 
 /* ---------------- helpers ---------------- */
 function copyText(text, okMsg) {
+  const done = () => toast(okMsg || "Copied!");
   if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(text).then(() => toast(okMsg || "Copied!"), () => toast(okMsg || "Copied!"));
-  } else toast("Copy failed");
+    navigator.clipboard.writeText(text).then(done, () => {
+      // Clipboard API blocked (permissions) — legacy execCommand fallback.
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = String(text);
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand("copy");
+        ta.remove();
+        toast(ok ? (okMsg || "Copied!") : "Copy failed — select manually");
+      } catch {
+        toast("Copy failed — select manually");
+      }
+    });
+  } else {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = String(text);
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+      done();
+    } catch { toast("Copy failed"); }
+  }
 }
 function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));

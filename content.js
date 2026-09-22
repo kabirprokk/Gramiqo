@@ -341,6 +341,22 @@ function bestInViewport(els) {
 function pickBestSrc(img) {
   try {
     if (img.srcset) {
+      // srcset: "url 640w, url 1080w" — pick the LARGEST w descriptor,
+      // not just the last entry (order is not guaranteed).
+      let best = "";
+      let bestW = -1;
+      for (const part of img.srcset.split(",")) {
+        const tokens = part.trim().split(/\s+/);
+        const u = tokens[0] || "";
+        if (!u.startsWith("http")) continue;
+        const desc = tokens[1] || "";
+        const w = /^(\d+)w$/.test(desc) ? Number(RegExp.$1) : 0;
+        if (w >= bestW) {
+          bestW = w;
+          best = u;
+        }
+      }
+      if (best) return best;
       const parts = img.srcset.split(",").map((s) => s.trim().split(" "));
       const last = parts[parts.length - 1]?.[0];
       if (last && last.startsWith("http")) return last;
@@ -349,67 +365,121 @@ function pickBestSrc(img) {
   return img.currentSrc || img.src || "";
 }
 
+function sanitizeDlName(name, fallbackExt) {
+  let s = String(name || "")
+    .replace(/[\\/:*?"<>|#]+/g, "-")
+    .replace(/\s+/g, "-")
+    .slice(0, 120);
+  if (!/\.[a-z0-9]{2,5}$/i.test(s)) s += "." + (fallbackExt || "jpg");
+  return s;
+}
+
 function hdUpgrade(url) {
   if (!url) return url;
-  return String(url)
-    .replace(/s\d+x\d+/g, "s1080x1080")
-    .replace(/w=\d+/g, "w=1080");
+  try {
+    // Only rewrite CDN thumbs: signed non-CDN URLs break when mutated.
+    if (!/cdninstagram\.com|fbcdn\.net/i.test(String(url))) return String(url);
+    return String(url)
+      .replace(/s\d+x\d+/g, "s1080x1080")
+      .replace(/([?&])w=\d+/g, "$1w=1080");
+  } catch {
+    return url;
+  }
 }
 
 /* ---------------- download ---------------- */
 
 function downloadUrl(url, filename) {
   if (!url) return toast("No media found");
-  toast("Downloading…"); // instant feedback — the wait popup, before any work
+  const safeName = sanitizeDlName(filename || `gramiqo-${Date.now()}.jpg`);
+  // MSE/DASH blob: URLs (video.src = blob:...) are MediaSource handles, NOT
+  // fetchable bytes — fetch() on them always fails. Never attempt it for
+  // video: report protected instead of a fake "Downloading…" that dies.
   if (url.startsWith("blob:")) {
+    // Rare image-blob case: small, fetchable. Try once with a size guard.
+    toast("Downloading…");
     fetch(url)
       .then((r) => {
         if (!r.ok) throw new Error("fetch " + r.status);
         return r.blob();
       })
       .then((blob) => {
+        if (!blob || blob.size < 1024) throw new Error("empty");
+        if (blob.size > 120 * 1024 * 1024) throw new Error("too-large");
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
-        a.download = filename;
+        a.download = safeName;
         document.body.appendChild(a);
         a.click();
         a.remove();
-        setTimeout(() => URL.revokeObjectURL(a.href), 8000);
+        setTimeout(() => URL.revokeObjectURL(a.href), 15000);
         toast("Downloading…");
       })
-      .catch(() => toast("Can't download this video (protected)"));
+      .catch(() => toast("Can't download this video (protected stream)"));
     return;
   }
+  toast("Downloading…"); // instant feedback — the wait popup, before any work
   try {
-    chrome.runtime.sendMessage({ type: "GRAMI_DOWNLOAD", url, filename }, (res) => {
-      if (chrome.runtime.lastError || !res?.ok) toast("Download blocked — right-click > Save");
-      // Success was already announced instantly below — stay quiet.
+    chrome.runtime.sendMessage({ type: "GRAMI_DOWNLOAD", url, filename: safeName }, (res) => {
+      if (chrome.runtime.lastError || !res?.ok) {
+        const err = String(res?.error || chrome.runtime.lastError?.message || "");
+        if (/blob/i.test(err)) toast("Can't download this video (protected stream)");
+        else if (/bad-url/i.test(err)) toast("Can't download this link");
+        else toast("Download blocked — right-click > Save");
+      }
+      // Success was already announced instantly above — stay quiet.
     });
   } catch {
     toast("Download unavailable here");
   }
 }
 
-function downloadVisibleMedia() {
+async function downloadVisibleMedia() {
   if (!settings.downloadBtn) return toast("Enable Download in popup first");
   const m = getVisibleMedia();
-  if (!m || !m.url) return toast("Scroll to a photo/reel first");
-  const ext = m.type === "video" ? "mp4" : "jpg";
-  downloadUrl(m.url, `gramiqo-${m.type}-${Date.now()}.${ext}`);
+  if (!m) return toast("Scroll to a photo/reel first");
+  if (m.type !== "video") {
+    if (!m.url || m.url.startsWith("blob:")) return toast("Image still loading — wait a second");
+    return downloadUrl(m.url, sanitizeDlName(`gramiqo-image-${Date.now()}.jpg`));
+  }
+  // Video: element blob URLs are not savable — resolve the real .mp4 first.
+  toast("Finding video…");
+  const r = await resolveDownloadUrl(m.el, location.href);
+  if (!r.url) {
+    if (r.protected) { protectedFallback(location.href, `gramiqo-video-${Date.now()}.mp4`); return; }
+    return toast("Video still loading — wait a second");
+  }
+  downloadUrl(r.url, sanitizeDlName(`gramiqo-video-${Date.now()}.mp4`));
 }
 
 // Resolve the BEST savable video URL: element URL → network-remembered
-// direct file → page og:video → blob (last resort). Blob/MSE streams are
-// what Instagram protects — the remembered .mp4 beats them every time.
+// direct file → page og:video → protected (never blob: MSE handles).
+// Blob/MSE streams are what Instagram protects — the remembered .mp4 beats
+// them every time. Segment-only network memory (DASH slices) is treated as
+// protected: downloading it yields a corrupt file, so we refuse honestly.
 function sendMsg(msg) {
   return new Promise((resolve) => {
+    let done = false;
+    const timer = setTimeout(() => {
+      if (!done) {
+        done = true;
+        resolve(null);
+      }
+    }, 5000);
     try {
       chrome.runtime.sendMessage(msg, (res) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
         if (chrome.runtime.lastError) resolve(null);
         else resolve(res || null);
       });
     } catch {
-      resolve(null);
+      if (!done) {
+        done = true;
+        clearTimeout(timer);
+        resolve(null);
+      }
     }
   });
 }
@@ -422,17 +492,59 @@ function pageVideoUrl() {
     return /^https?:\/\//.test(u) ? u : "";
   } catch { return ""; }
 }
-async function resolveDownloadUrl(video) {
+function gramiqoDl() {
+  try { return window.GramiqoDl || null; } catch { return null; }
+}
+function shortcodeHint(fallbackLink) {
+  try {
+    const dl = gramiqoDl();
+    if (fallbackLink && dl) {
+      const c = dl.shortcodeFromUrl(fallbackLink);
+      if (c) return c;
+    }
+  } catch {}
+  try { return gramiqoDl()?.pageShortcode() || ""; } catch { return ""; }
+}
+async function resolveDownloadUrl(video, hintLink) {
   try {
     const cur = video ? (video.currentSrc || video.src || "") : "";
-    if (/^https?:\/\//.test(cur) && !cur.startsWith("blob:")) return { url: cur, via: "direct" };
+    if (/^https?:\/\//.test(cur) && !cur.startsWith("blob:") && !/bytestart|byteend/i.test(cur)) return { url: cur, via: "direct" };
+    // Same-tab network memory is best, but verify freshness: the entry may
+    // belong to a neighbouring reel that preloaded after this one.
     const remembered = await sendMsg({ type: "GRAMI_GET_MEDIA" });
-    if (remembered?.url && /^https?:\/\//.test(remembered.url)) return { url: remembered.url, via: "network" };
+    if (remembered?.url && /^https?:\/\//.test(remembered.url) && !/bytestart|byteend/i.test(remembered.url)) return { url: remembered.url, via: "network" };
     const og = pageVideoUrl();
     if (og) return { url: og, via: "page" };
+    // Progressive .mp4 via Instagram's own embed/JSON (same first step
+    // yt-dlp uses) — rescues most "protected" blob:/DASH cases instantly,
+    // no extra software needed.
+    try {
+      const dl = gramiqoDl();
+      const code = shortcodeHint(hintLink);
+      if (dl && code) {
+        const prog = await dl.fetchProgressiveMp4(code);
+        if (prog && /^https?:\/\//.test(prog)) return { url: prog, via: "progressive" };
+      }
+    } catch {}
+    // Blob (MSE) is not downloadable — signal protected, never return it.
+    // Segment-only network memory is also protected (slices ≠ video).
+    if (remembered?.partial) return { url: "", via: "", protected: true };
+    if (cur && cur.startsWith("blob:")) return { url: "", via: "", protected: true };
     if (cur) return { url: cur, via: "blob" };
   } catch {}
   return { url: "", via: "" };
+}
+function protectedFallback(hintLink, filename) {
+  try {
+    const dl = gramiqoDl();
+    if (dl) {
+      const code = shortcodeHint(hintLink);
+      const pageUrl = code ? dl.pageUrlForShortcode(code) : location.href;
+      dl.showProtectedFallback(pageUrl, filename || `gramiqo-${Date.now()}.mp4`);
+      return;
+    }
+  } catch {}
+  toast("Can't download this video (protected stream)");
 }
 
 /* Audio download was removed in v1.1.6 (OLIN 1.1.f) per owner request.
@@ -443,11 +555,13 @@ function articleMedia(article) {
   const vUrl = video
     ? video.currentSrc || video.src || video.querySelector("source")?.src || ""
     : "";
-  if (vUrl) return { type: "video", url: vUrl };
+  // Return the element too: callers need it to resolve the real .mp4 via
+  // network memory (the blob: URL itself is never downloadable).
+  if (vUrl) return { type: "video", url: vUrl, el: video };
   const imgs = [...article.querySelectorAll("img")]
     .filter((i) => i.naturalWidth > 200 && !isJunkImg(i));
   imgs.sort((a, b) => b.naturalWidth - a.naturalWidth);
-  if (imgs[0]) return { type: "image", url: pickBestSrc(imgs[0]) };
+  if (imgs[0]) return { type: "image", url: pickBestSrc(imgs[0]), el: imgs[0] };
   return null;
 }
 
@@ -489,14 +603,40 @@ function addMenuToPosts() {
         const media = articleMedia(article);
         if (!media) return toast("No media found in this post");
         if (media.type !== "video") {
-          const ext = "jpg";
-          return downloadUrl(media.url, `gramiqo-image-${Date.now()}.${ext}`);
+          if (!media.url || media.url.startsWith("blob:")) return toast("Image still loading — wait a second");
+          const ext = /\.png(\?|#|$)/i.test(media.url) ? "png" : /\.webp(\?|#|$)/i.test(media.url) ? "webp" : "jpg";
+          return downloadUrl(media.url, sanitizeDlName(`gramiqo-image-${Date.now()}.${ext}`));
         }
         toast("Finding video…");
-        const v = article.querySelector("video");
-        const r = await resolveDownloadUrl(v);
-        if (!r.url) return toast("Video still loading — wait a second");
-        downloadUrl(r.url, `gramiqo-video-${Date.now()}.mp4`);
+        const v = media.el || article.querySelector("video");
+        const linkHint = articleLink(article) || location.href;
+        const fname = sanitizeDlName(`gramiqo-video-${Date.now()}.mp4`);
+        // One-click local bridge first (if ytdlp-server.py is running it
+        // saves instantly with zero paste). Null when not running — falls
+        // through to the normal resolver silently.
+        try {
+          const dl = gramiqoDl();
+          if (dl) {
+            const bridged = await dl.tryLocalBridge(linkHint, fname);
+            if (bridged && bridged.saved) { toast("Saved via local yt-dlp bridge!"); return; }
+          }
+        } catch {}
+        const r = await resolveDownloadUrl(v, linkHint);
+        if (!r.url) {
+          if (r.protected) { protectedFallback(linkHint, fname); return; }
+          return toast("Video still loading — wait a second");
+        }
+        downloadUrl(r.url, fname);
+      }));
+    }
+    if (settings.downloadBtn) {
+      pop.appendChild(menuRow("copy", "Copy yt-dlp command", () => {
+        try {
+          const dl = gramiqoDl();
+          const linkHint = articleLink(article) || location.href;
+          if (dl) { dl.copyYtDlp(dl.ytdlpCommand(linkHint, `gramiqo-${Date.now()}.mp4`), "yt-dlp command copied — paste in terminal!"); return; }
+        } catch {}
+        toast("yt-dlp helper not loaded — reload IG tab");
       }));
     }
     if (settings.copyCaption) {
@@ -1424,9 +1564,27 @@ function updateFloatingReelMenu() {
       pop.appendChild(menuRow("download", "Download", async () => {
         toast("Finding video…");
         const v = currentReelVideo();
-        const r = await resolveDownloadUrl(v);
-        if (!r.url) return toast("Video still loading — wait a second");
-        downloadUrl(r.url, `gramiqo-reel-${Date.now()}.mp4`);
+        const fname = sanitizeDlName(`gramiqo-reel-${Date.now()}.mp4`);
+        try {
+          const dl = gramiqoDl();
+          if (dl) {
+            const bridged = await dl.tryLocalBridge(location.href, fname);
+            if (bridged && bridged.saved) { toast("Saved via local yt-dlp bridge!"); return; }
+          }
+        } catch {}
+        const r = await resolveDownloadUrl(v, location.href);
+        if (!r.url) {
+          if (r.protected) { protectedFallback(location.href, fname); return; }
+          return toast("Video still loading — wait a second");
+        }
+        downloadUrl(r.url, fname);
+      }));
+      pop.appendChild(menuRow("copy", "Copy yt-dlp", () => {
+        try {
+          const dl = gramiqoDl();
+          if (dl) { dl.copyYtDlp(dl.ytdlpCommand(location.href, `gramiqo-${Date.now()}.mp4`), "yt-dlp command copied — paste in terminal!"); return; }
+        } catch {}
+        toast("yt-dlp helper not loaded — reload IG tab");
       }));
       pop.appendChild(menuRow("link", "Copy link", () => {
         copyText(location.href, "Reel link copied!");

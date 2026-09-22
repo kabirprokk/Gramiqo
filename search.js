@@ -856,12 +856,16 @@ function headers() {
   return { "x-ig-app-id": APP_ID, "x-requested-with": "XMLHttpRequest", "x-csrftoken": getCsrf() };
 }
 async function fetchJson(url, signal, label) {
+  // Timeout must work even when the caller passes its own AbortSignal:
+  // link the caller's signal to a local controller instead of ignoring it.
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  const onAbort = () => { try { ctrl.abort(); } catch {} };
+  try { signal?.addEventListener?.("abort", onAbort, { once: true }); } catch {}
   const t0 = Date.now();
   const name = label || String(url).split("?")[0].split("/").slice(-2).join("/");
   try {
-    const res = await fetch(url, { credentials: "include", headers: headers(), signal: signal || ctrl.signal });
+    const res = await fetch(url, { credentials: "include", headers: headers(), signal: ctrl.signal });
     if (!res.ok) throw new Error("HTTP " + res.status);
     const j = await res.json();
     diagRec(name, true, `ok ${Date.now() - t0}ms keys=${Object.keys(j || {}).length}`);
@@ -871,6 +875,7 @@ async function fetchJson(url, signal, label) {
     throw e;
   } finally {
     clearTimeout(timer);
+    try { signal?.removeEventListener?.("abort", onAbort); } catch {}
   }
 }
 async function fetchText(url, signal, label) {

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gramiqo Downloader</title>
+<!-- HIDDEN page: opened only mid-download by the Gramiqo extension.
+     Unlisted (no nav link, no sitemap entry), never indexed. -->
+<meta name="robots" content="noindex, nofollow, noarchive" />
+<meta name="theme-color" content="#0b0b10" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%230082FB'/%3E%3Cstop offset='.5' stop-color='%23786EFD'/%3E%3Cstop offset='1' stop-color='%23E940DF'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='24' height='24' rx='6' fill='url(%23g)'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="styles.css" />
+<style>
+.dl-hero{padding:56px 0 24px;text-align:center}
+.dl-hero h1{font-size:34px;margin:0 0 8px}
+.dl-hero p{color:var(--mut);margin:0 auto 18px;max-width:560px;font-size:15px}
+.dl-box{display:flex;gap:10px;max-width:620px;margin:0 auto}
+.dl-box input{flex:1;background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:13px 16px;color:var(--txt);font-size:14px;min-width:0}
+.dl-box input:focus{outline:none;border-color:var(--acc2)}
+.dl-status{max-width:620px;margin:14px auto 0;font-size:13.5px;min-height:22px;color:var(--mut)}
+.dl-status.err{color:#ff8fb0}.dl-status.ok{color:#7cc7ff}
+.dl-result{max-width:620px;margin:18px auto 0;background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;text-align:left}
+.dl-result[hidden]{display:none}
+.dl-prev{width:100%;max-height:380px;object-fit:cover;display:block;background:#000}
+.dl-meta{padding:14px 16px}
+.dl-meta b{display:block;font-size:14px}
+.dl-meta small{color:var(--mut);font-size:12.5px}
+.dl-row{display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid var(--line)}
+.dl-row .q{font-weight:800;font-size:13px}
+.dl-row .t{color:var(--mut);font-size:12px;flex:1}
+.dl-steps{display:flex;gap:12px;max-width:620px;margin:26px auto 0;flex-wrap:wrap}
+.dl-steps div{flex:1;min-width:150px;background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:13px;color:var(--mut)}
+.dl-steps b{display:block;color:var(--txt);margin-bottom:4px}
+.dl-note{max-width:620px;margin:16px auto 0;font-size:12px;opacity:.6}
+@media(max-width:560px){.dl-box{flex-direction:column}.dl-hero h1{font-size:27px}}
+</style>
+</head>
+<body>
+<header class="nav"><div class="wrap nav-in">
+  <div class="brand"><a class="brand-link" href="index.html"><span class="logo">G</span><span>Gramiqo</span></a></div>
+</div></header>
+<main class="wrap">
+  <section class="dl-hero">
+    <h1>Instagram Downloader</h1>
+    <p>Paste a reel, post or photo link — get the original MP4 / JPG in one tap. Free, no login, no watermark.</p>
+    <div class="dl-box">
+      <input id="dlInput" type="url" placeholder="https://www.instagram.com/reel/…" autocomplete="off" spellcheck="false" aria-label="Instagram link" />
+      <button class="btn" id="dlGo" type="button">Download</button>
+    </div>
+    <div class="dl-status" id="dlStatus" aria-live="polite"></div>
+    <div class="dl-result" id="dlResult" hidden>
+      <img class="dl-prev" id="dlThumb" alt="Post preview" referrerpolicy="no-referrer" />
+      <div class="dl-meta"><b id="dlTitle">Ready</b><small id="dlSub"></small></div>
+      <div id="dlRows"></div>
+    </div>
+    <div class="dl-steps">
+      <div><b>1 · Copy link</b>Instagram ⋯ menu → Copy link (or the extension sends it here).</div>
+      <div><b>2 · Paste &amp; fetch</b>We read Instagram's own embed — original quality, no re-encode.</div>
+      <div><b>3 · Save</b>Pick a quality or let auto-download fire. Files land in Downloads.</div>
+    </div>
+    <p class="dl-note">Public posts only. Private / login-gated posts can't be fetched server-side — open them with the Gramiqo extension, which downloads with your own session. Files are for personal use; creators own the rights.</p>
+  </section>
+</main>
+<footer><div class="wrap foot-in"><div>© <span id="yr">2026</span> <b>Gramiqo</b></div></div></footer>
+<script src="dl.js"></script>
+</body>
+</html>
